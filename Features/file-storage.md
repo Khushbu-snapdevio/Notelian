@@ -4,32 +4,32 @@
 
 File Storage handles all binary uploads in Notelian — page cover images, page icons, and media blocks (Image, Video, Audio, File). Every uploaded file is stored in object storage (S3-compatible) and served through a CDN.
 
-**Storage provider:** Cloudflare R2 (S3-compatible, zero egress fees)
-**CDN:** Cloudflare CDN (automatic — R2 public buckets are served via Cloudflare's edge network)
+**Storage provider:** AWS S3
+**CDN:** Amazon CloudFront (distribution pointed at the S3 bucket — files served from the edge)
 
 ---
 
 ## Upload Flow
 
-All uploads use **pre-signed URLs** — the client receives a signed URL from the API and uploads directly to R2, bypassing the Next.js server. This avoids streaming large files through the app server.
+All uploads use **pre-signed URLs** — the client receives a signed URL from the API and uploads directly to S3, bypassing the Next.js server. This avoids streaming large files through the app server.
 
 ### Step-by-step
 
 ```
-Client                     API Server                      Cloudflare R2
+Client                     API Server                      Cloudflare S3
   │                              │                                │
   │── POST /api/uploads/sign ───►│                                │
   │   { type, size, mimeType }   │                                │
-  │                              │── generate pre-signed PUT URL ►│
+  │                              │── generate pre-signed PUT URL ►│ (S3 presigned URL)
   │                              │◄─ signed URL + objectKey ──────│
   │◄─ { uploadUrl, objectKey } ──│                                │
   │                              │                                │
   │── PUT {uploadUrl} ──────────────────────────────────────────►│
-  │   (file bytes, direct to R2)                                  │
+  │   (file bytes, direct to S3)                                  │
   │◄─ 200 OK ────────────────────────────────────────────────────│
   │                              │                                │
   │── POST /api/uploads/confirm ►│                                │
-  │   { objectKey }              │── verify object exists ───────►│
+  │   { objectKey }              │── verify object exists ───────►│ (S3 HeadObject)
   │                              │── update storage usage ─────── DB
   │◄─ { fileUrl } ───────────────│                                │
 ```
@@ -111,16 +111,16 @@ Shown in **Workspace Settings → General** (visible to all members, admin can s
 
 ## File Deletion
 
-Files are deleted from R2 when:
+Files are deleted from S3 when:
 
 | Trigger | Behavior |
 |---------|---------|
-| Block deleted from editor | Delete file from R2; decrement usage |
-| Page permanently deleted | Delete all file blocks on the page from R2; decrement usage |
-| Workspace deleted | Delete all workspace files from R2; usage record dropped |
+| Block deleted from editor | Delete file from S3; decrement usage |
+| Page permanently deleted | Delete all file blocks on the page from S3; decrement usage |
+| Workspace deleted | Delete all workspace files from S3; usage record dropped |
 | Upload aborted / not confirmed within 30 minutes | Object is cleaned up by a pg-boss job (stale upload cleanup) |
 
-Deletes from R2 are async — queued as a pg-boss job so the UI is not blocked.
+Deletes from S3 are async — queued as a pg-boss job so the UI is not blocked.
 
 ---
 
@@ -133,7 +133,7 @@ Deletes from R2 are async — queued as a pg-boss job so the UI is not blocked.
 Example: `wsp_abc123/pg_xyz789/img_k3j9x2a.webp`
 
 - Never publicly guessable — UUIDs are random
-- CDN public URL: `https://cdn.notelian.app/{objectKey}`
+- CDN public URL: `https://cdn.notelian.app/{objectKey}` (served via CloudFront distribution)
 
 ---
 
@@ -145,7 +145,7 @@ FileUpload
 ├── workspace_id        (foreign key → Workspace)
 ├── page_id             (foreign key → Page, nullable — for page cover/icon)
 ├── block_id            (foreign key → Block, nullable — for media blocks)
-├── object_key          (string — R2 object key, unique)
+├── object_key          (string — S3 object key, unique)
 ├── file_url            (string — CDN URL)
 ├── mime_type           (string)
 ├── file_size_bytes     (integer)
@@ -165,18 +165,18 @@ WorkspaceStorageUsage
 
 | Job | Schedule | Description |
 |-----|----------|-------------|
-| `cleanup-stale-uploads` | Every 30 minutes | Delete R2 objects for uploads not confirmed within 30 minutes (abandoned uploads) |
-| `sync-storage-usage` | Daily | Reconcile `bytes_used` against actual R2 objects for drift correction |
+| `cleanup-stale-uploads` | Every 30 minutes | Delete S3 objects for uploads not confirmed within 30 minutes (abandoned uploads) |
+| `sync-storage-usage` | Daily | Reconcile `bytes_used` against actual S3 objects for drift correction |
 
 ---
 
 ## Business Rules
 
-1. Files are uploaded directly to R2 via pre-signed URL — they never transit the Next.js app server.
+1. Files are uploaded directly to S3 via pre-signed URL — they never transit the Next.js app server.
 2. Pre-signed PUT URLs expire after **15 minutes** — the client must complete the upload within this window.
 3. An upload is not recorded until `/api/uploads/confirm` is called with the object key.
 4. Storage quota is checked before issuing a pre-signed URL — a quota breach blocks the upload before any bytes are sent.
-5. File deletion from R2 is always async via pg-boss — the UI reflects deletion immediately but R2 cleanup happens in the background.
+5. File deletion from S3 is always async via pg-boss — the UI reflects deletion immediately but S3 cleanup happens in the background.
 6. Deleting a file block decrements the workspace's `bytes_used` immediately on confirm.
 7. Workspace storage usage is shown to all members.
 8. CDN URLs are stable — a file's public URL does not change after upload.
@@ -190,4 +190,5 @@ WorkspaceStorageUsage
 - Video transcoding (embed via URL is the MVP path for large videos)
 - Per-member storage breakdown
 - Storage usage history / graph
-- Custom storage provider (bring your own S3)
+- Per-member storage breakdown
+- Storage usage history / graph

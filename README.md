@@ -288,9 +288,9 @@ Two-layer access control: workspace roles + page-level permissions.
 
 ## 15. File Storage
 
-Binary uploads stored in Cloudflare R2 and served via Cloudflare CDN. Covers page cover images, page icons, and all media blocks (Image, Video, Audio, File).
+Binary uploads stored in AWS S3 and served via Amazon CloudFront CDN. Covers page cover images, page icons, and all media blocks (Image, Video, Audio, File).
 
-**Provider:** Cloudflare R2 (S3-compatible, zero egress fees)
+**Provider:** AWS S3
 
 **Upload flow:** Pre-signed PUT URLs — files upload directly to R2, never transiting the app server.
 
@@ -324,7 +324,7 @@ Binary uploads stored in Cloudflare R2 and served via Cloudflare CDN. Covers pag
 - [x] Permissions & Sharing (roles, page permissions, public links, guests)
 - [x] In-app and Email Notifications
 - [x] Orbit Admin (user + workspace + template management)
-- [x] File Storage (Cloudflare R2, pre-signed direct uploads)
+- [x] File Storage (AWS S3 + CloudFront, pre-signed direct uploads)
 
 ### Excluded from MVP (Post-MVP)
 
@@ -353,8 +353,8 @@ Binary uploads stored in Cloudflare R2 and served via Cloudflare CDN. Covers pag
 | Auth | Better Auth + Admin Plugin | Sessions, OAuth, user management |
 | Editor | TipTap (ProseMirror-based) | Block-based rich text editor |
 | Job Queue | pg-boss | Notifications, email digests, cleanup jobs |
-| File Storage | S3 / Cloudflare R2 | Images, covers, file attachments |
-| Email | Resend | Transactional email delivery |
+| File Storage | AWS S3 + CloudFront | Images, covers, file attachments |
+| Email | Nodemailer (SMTP) | Transactional email delivery |
 | Admin | Orbit Admin | Internal ops dashboard |
 
 ---

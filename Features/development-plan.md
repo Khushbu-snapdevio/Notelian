@@ -17,8 +17,8 @@ This document covers Notelian's technical architecture, development phases, and 
 | Auth | Better Auth + Admin Plugin | Database-backed sessions, OAuth, impersonation |
 | Editor | TipTap | ProseMirror-based, extensible block editor |
 | Job Queue | pg-boss | PostgreSQL-backed — notifications, email, cleanup |
-| File Storage | S3 / Cloudflare R2 | Page covers, media blocks, file attachments |
-| Email | Resend | Transactional email delivery |
+| File Storage | AWS S3 | Page covers, media blocks, file attachments |
+| Email | Nodemailer (SMTP) | Transactional email delivery via SMTP |
 | Admin | Orbit Admin | Custom internal ops dashboard (`/orbit`) |
 | Styling | Tailwind CSS | Utility-first CSS framework |
 | Math Rendering | KaTeX | LaTeX equation rendering in editor blocks |
@@ -74,7 +74,7 @@ notelian/
 - Permissions — workspace roles + page-level access, public links, guests
 - Notifications — in-app (SSE), email digest (pg-boss)
 - Orbit Admin — user, workspace, and template management
-- File Storage (Cloudflare R2, pre-signed direct uploads)
+- File Storage (AWS S3, pre-signed direct uploads)
 
 **Estimated timeline:** 16–20 weeks
 
@@ -218,12 +218,17 @@ Admin:
 | `BETTER_AUTH_SECRET` | Secret for Better Auth session signing |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
-| `S3_BUCKET` | S3 / R2 bucket name |
-| `S3_REGION` | AWS region or R2 endpoint |
-| `S3_ACCESS_KEY_ID` | S3 / R2 access key |
-| `S3_SECRET_ACCESS_KEY` | S3 / R2 secret key |
-| `EMAIL_FROM` | Sender email address for transactional email |
-| `RESEND_API_KEY` | Resend API key |
+| `S3_BUCKET` | AWS S3 bucket name |
+| `S3_REGION` | AWS region (e.g. `us-east-1`) |
+| `S3_ACCESS_KEY_ID` | AWS IAM access key ID |
+| `S3_SECRET_ACCESS_KEY` | AWS IAM secret access key |
+| `CDN_URL` | CloudFront CDN base URL for serving uploaded files |
+| `EMAIL_FROM` | Sender address (e.g. `noreply@notelian.app`) |
+| `SMTP_HOST` | SMTP server hostname (e.g. `smtp.sendgrid.net`) |
+| `SMTP_PORT` | SMTP port (`587` for STARTTLS, `465` for TLS) |
+| `SMTP_USER` | SMTP authentication username |
+| `SMTP_PASSWORD` | SMTP authentication password |
+| `SMTP_SECURE` | `true` for TLS (port 465), `false` for STARTTLS (port 587) |
 | `NEXT_PUBLIC_APP_URL` | Public base URL (e.g. `https://notelian.app`) |
 
 ---
@@ -264,8 +269,8 @@ npm run dev
 **Production stack:**
 - Next.js app: Vercel (or Railway)
 - PostgreSQL: Supabase / Neon / Railway managed PostgreSQL
-- File storage: Cloudflare R2 (S3-compatible)
-- Email: Resend
+- File storage: AWS S3 + CloudFront CDN
+- Email: Nodemailer (SMTP)
 
 **CI/CD:**
 - Push to `main` → automated tests → deploy to production

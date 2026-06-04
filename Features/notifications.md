@@ -200,7 +200,7 @@ All notification jobs are managed by **pg-boss** within the same PostgreSQL data
 - Notification writes are **transactional** — if the triggering event (comment, @mention) fails to save, no notification is enqueued
 - Failed delivery jobs retry up to **3 times** with exponential backoff (1min, 5min, 25min)
 - Failed jobs after 3 retries are logged to the error monitoring system
-- Email sending uses **Resend** as the transactional email provider
+- Email sending uses **Nodemailer** via SMTP — configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, and `SMTP_SECURE`
 
 ---
 
