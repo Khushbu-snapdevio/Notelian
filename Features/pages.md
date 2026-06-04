@@ -207,6 +207,7 @@ https://notelian.app/[workspace-slug]/[page-id]
 ```
 Page
 ├── id                  (uuid, primary key)
+├── short_id            (string, unique — 7-character nanoid, used in public URLs)
 ├── workspace_id        (foreign key → Workspace)
 ├── parent_id           (foreign key → Page, nullable — null = top-level)
 ├── title               (string, default: "Untitled")
@@ -223,6 +224,22 @@ Page
 ├── created_at          (timestamp)
 └── updated_at          (timestamp)
 ```
+
+---
+
+```
+
+```
+PageVersion
+├── id                  (uuid, primary key)
+├── page_id             (foreign key → Page)
+├── content_snapshot    (jsonb — full serialized block structure at time of save)
+├── label               (string, nullable — optional name e.g. "Before restructure")
+├── created_by          (user_id, foreign key)
+└── created_at          (timestamp)
+```
+
+Versions are created automatically on each auto-save (debounced — one version per 10-minute window per user). The most recent version within the plan's retention window is always kept. Older versions outside the retention window are pruned by the `auto-delete-expired-versions` pg-boss job.
 
 ---
 

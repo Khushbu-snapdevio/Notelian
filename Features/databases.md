@@ -87,7 +87,7 @@ Entries displayed as cards in vertical columns, grouped by a **Select-type prope
 
 ---
 
-### 3. Calendar View *(Pro / Business plan)*
+### 3. Calendar View
 
 Entries placed on a calendar grid based on a **Date-type property**.
 
@@ -101,7 +101,7 @@ Entries placed on a calendar grid based on a **Date-type property**.
 
 ---
 
-### 4. Gallery View *(Pro / Business plan)*
+### 4. Gallery View
 
 Entries displayed as visual cards in a grid, with the cover image prominent.
 
@@ -258,7 +258,6 @@ DatabaseEntry (extends Page — each entry is a page)
 3. Switching views never modifies the underlying data — views are lenses on the same data set.
 4. Board view requires a Select-type property to group by. If no Select property exists, the user is prompted to create one.
 5. Calendar view requires a Date-type property. If none exists, the user is prompted to create one.
-6. Calendar and Gallery views are available on Pro and Business plans only. Free plan users see a paywall when attempting to add these view types.
 7. Filters and sorts are saved per view — changing filters on one view does not affect other views.
 8. Deleting a view does not delete any entries.
 9. An entry deleted from a database is moved to Trash — it can be restored within 30 days.

@@ -2,7 +2,7 @@
 
 ## Overview
 
-File Storage handles all binary uploads in Notelian — page cover images, page icons, and media blocks (Image, Video, Audio, File). Every uploaded file is stored in object storage (S3-compatible), served through a CDN, and counted against the workspace's plan storage quota.
+File Storage handles all binary uploads in Notelian — page cover images, page icons, and media blocks (Image, Video, Audio, File). Every uploaded file is stored in object storage (S3-compatible) and served through a CDN.
 
 **Storage provider:** Cloudflare R2 (S3-compatible, zero egress fees)
 **CDN:** Cloudflare CDN (automatic — R2 public buckets are served via Cloudflare's edge network)
@@ -57,34 +57,24 @@ Client                     API Server                      Cloudflare R2
 
 ### Per-File Size Limits
 
-The table below shows the absolute maximum per block type (applies on the Business plan). On Free and Pro plans, the plan-level upload cap acts as an additional ceiling: **5 MB on Free, 25 MB on Pro**. The effective limit for any upload is `min(per-type limit, plan limit)`.
+| Block Type | Max Size |
+|------------|---------|
+| Page cover image | 5 MB |
+| Page icon (custom image) | 1 MB |
+| Image block | 10 MB |
+| Video block | 50 MB |
+| Audio block | 50 MB |
+| File block | 100 MB |
 
-| Block Type | Max Size (Business) | Free effective | Pro effective |
-|------------|---------------------|----------------|---------------|
-| Page cover image | 5 MB | 5 MB | 5 MB |
-| Page icon (custom image) | 1 MB | 1 MB | 1 MB |
-| Image block | 10 MB | 5 MB | 10 MB |
-| Video block | 50 MB | 5 MB | 25 MB |
-| Audio block | 50 MB | 5 MB | 25 MB |
-| File block | 100 MB | 5 MB | 25 MB |
-
-These limits are enforced at the `/api/uploads/sign` step — if the declared size exceeds the effective limit, the API returns a 400 error before any upload occurs.
+These limits are enforced at the `/api/uploads/sign` step — if the declared size exceeds the limit, the API returns a 400 error before any upload occurs.
 
 ---
 
-## Storage Quota per Plan
+## Storage Tracking
 
-| Plan | Total Storage per Workspace |
-|------|----------------------------|
-| Free | 500 MB |
-| Pro | 10 GB |
-| Business | 100 GB |
+Storage usage is calculated as the sum of all file sizes stored in the workspace. Database content (text, block metadata) does not count toward storage.
 
-Storage usage is calculated as the sum of all file sizes stored in the workspace (all uploads across all pages and members). Database content (text, block metadata) does not count toward storage.
-
----
-
-## Quota Enforcement
+## Storage Usage Enforcement
 
 ### Pre-upload check
 
@@ -92,15 +82,6 @@ Before issuing a pre-signed URL, the API checks:
 
 1. Current workspace storage usage (from `WorkspaceStorageUsage.bytes_used`)
 2. Requested file size
-3. Plan limit
-
-If `bytes_used + requested_size > plan_limit`:
-- Return `HTTP 402` with error code `STORAGE_LIMIT_REACHED`
-- Show in-product: `"Your workspace has reached its storage limit. Upgrade your plan to upload more files."` with an **Upgrade** CTA
-
-If `bytes_used + requested_size > plan_limit * 0.9` (within 10% of limit):
-- Upload proceeds
-- Show a soft warning in workspace settings: `"You are using X% of your storage. Upgrade before you run out."`
 
 ### Usage tracking
 
@@ -118,9 +99,8 @@ Shown in **Workspace Settings → General** (visible to all members, admin can s
 ┌────────────────────────────────────────────────┐
 │ Storage                                         │
 │                                                 │
-│  [████████░░░░░░░░░░░░░░] 4.2 GB / 10 GB used  │
+│  [████████░░░░░░░░░░░░░░] 4.2 GB used           │
 │                                                 │
-│  Free plan: 500 MB    [Upgrade →]               │
 └────────────────────────────────────────────────┘
 ```
 
@@ -198,7 +178,7 @@ WorkspaceStorageUsage
 4. Storage quota is checked before issuing a pre-signed URL — a quota breach blocks the upload before any bytes are sent.
 5. File deletion from R2 is always async via pg-boss — the UI reflects deletion immediately but R2 cleanup happens in the background.
 6. Deleting a file block decrements the workspace's `bytes_used` immediately on confirm.
-7. Workspace storage usage is shown to all members; upgrade prompts are shown when usage exceeds 90%.
+7. Workspace storage usage is shown to all members.
 8. CDN URLs are stable — a file's public URL does not change after upload.
 9. Abandoned uploads (not confirmed within 30 minutes) are cleaned up by the stale-upload job.
 

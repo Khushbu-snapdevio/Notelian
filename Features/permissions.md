@@ -22,7 +22,7 @@ Controls what a user can do at the workspace level.
 
 | Role | Description |
 |------|-------------|
-| Admin | Full control — all workspace settings, all members, all pages. Only one Admin per workspace. |
+| Admin | Full control — all workspace settings, all members, all non-private pages. Private pages of other members are not accessible. Only one Admin per workspace. |
 | Editor | Standard member. Can create pages and edit content. Subject to page-level restrictions. |
 | Viewer | Read-only. Can view pages they have been explicitly granted access to. |
 
@@ -144,6 +144,7 @@ Share a page with anyone on the internet — no Notelian account required.
 - **Subpages:** Not automatically public — each subpage requires its own public link
 - **Disabling:** Toggle off immediately revokes access. The old URL stops working.
 - **Re-enabling:** A new unique URL is generated (the old URL is permanently invalidated)
+- **Non-public subpage links:** If a visitor on a public page clicks a link to a subpage that has no public link enabled, they are shown a `"This page is not publicly available"` screen with a `"Sign in to Notelian"` button. It is never a 404 — the page exists, it is simply not shared publicly.
 
 | Public access level | Can read | Can comment | Can edit |
 |---------------------|---------|------------|---------|
@@ -176,14 +177,6 @@ The invitation link expires in **7 days**. If not accepted, the inviting user mu
 ### Revoking guest access
 
 Remove the guest from the page's permission list. Access is revoked immediately. No notification is sent to the guest.
-
-### Guest limits by plan
-
-| Plan | Max guests per workspace |
-|------|------------------------|
-| Free | 2 |
-| Pro | 10 |
-| Business | Unlimited |
 
 ---
 
@@ -273,9 +266,8 @@ GuestInvitation
 5. Disabling a public link immediately revokes access. Re-enabling generates a new, different URL — the old URL is permanently inactive.
 6. Guest invitations expire after 7 days. After expiry, the guest cannot accept and a new invite must be sent.
 7. A guest can only access the specific page(s) they were invited to — no other workspace content is visible.
-8. Guest limits are enforced per plan (Free: 2, Pro: 10, Business: unlimited). Inviting a guest over the limit is blocked and shows an upgrade prompt.
-9. Removing a member from a page revokes their explicit access. They fall back to inherited permissions from the parent, or no access if none applies.
-10. Only users with **Full Access** on a page can manage that page's permissions, share it externally, or set it to private.
+8. Removing a member from a page revokes their explicit access. They fall back to inherited permissions from the parent, or no access if none applies.
+9. Only users with **Full Access** on a page can manage that page's permissions, share it externally, or set it to private.
 
 ---
 

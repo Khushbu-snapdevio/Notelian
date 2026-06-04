@@ -91,12 +91,13 @@ Accessible from **Workspace Settings → Members**
 
 | Role | Description |
 |------|-------------|
-| Admin | Full control — workspace settings, all members, all pages and content. Only one Admin (owner) per workspace. |
+| Admin | Full control — workspace settings, all members, all non-private pages and content. Private pages set by other members are not accessible. Only one Admin (owner) per workspace. |
 | Editor | Standard member. Can create and edit pages. Subject to page-level permission restrictions. |
 | Viewer | Read-only. Can view pages they have been granted access to. Cannot create or edit content. |
 
 **Role change rules:**
-- Admin can change any member's role
+- Admin can change any member's role between Editor and Viewer via the role dropdown
+- The Admin role cannot be assigned via the role dropdown — it can only move to another member through the Transfer Ownership flow
 - Admin cannot be removed — ownership must be transferred to another member first
 
 ---
@@ -148,13 +149,8 @@ Workspace
 ├── slug                (string, unique — used in URLs)
 ├── icon                (string — emoji character or image URL, nullable)
 ├── created_by          (user_id, foreign key → User)
-├── plan_id                  (foreign key → Plan)
-├── plan_override_id         (foreign key → Plan, nullable)
-├── plan_override_expires_at (timestamp, nullable)
-├── billing_cycle            (enum: monthly | annual)
-├── current_period_ends_at   (timestamp)
-├── created_at               (timestamp)
-└── updated_at               (timestamp)
+├── created_at          (timestamp)
+└── updated_at          (timestamp)
 
 WorkspaceMember
 ├── id                  (uuid, primary key)
@@ -222,4 +218,3 @@ WorkspaceMember
 - Audit log export
 - Custom domain for workspace
 - Workspace templates
-- Billing / subscription self-service (managed via Orbit Admin)

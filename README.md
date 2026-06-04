@@ -40,11 +40,10 @@ Workspace
 11. [Comments & Mentions](#11-comments--mentions)
 12. [Permissions & Sharing](#12-permissions--sharing)
 13. [Notifications](#13-notifications)
-14. [Plans & Pricing](#14-plans--pricing)
-15. [Admin Panel](#15-admin-panel)
-16. [File Storage](#16-file-storage)
-17. [MVP Scope](#17-mvp-scope)
-18. [Tech Stack](#18-tech-stack)
+14. [Admin Panel](#14-admin-panel)
+15. [File Storage](#15-file-storage)
+16. [MVP Scope](#16-mvp-scope)
+17. [Tech Stack](#17-tech-stack)
 
 ---
 
@@ -85,7 +84,7 @@ Top-level organizational container. Every user belongs to at least one workspace
 
 | Role | Description |
 |------|-------------|
-| Admin | Full control — settings, members, all content |
+| Admin | Full control — settings, members, all non-private content |
 | Editor | Create and edit content; subject to page-level restrictions |
 | Viewer | Read-only access to pages they have been granted access to |
 
@@ -112,7 +111,7 @@ Sidebar and workspace navigation.
 - Favorites section (personal per-user)
 - Workspace switcher (top of sidebar)
 - Recently visited pages (last 10)
-- Trash (plan-based retention: 30 days Free / 90 days Pro / 1 year Business)
+- Trash (30-day retention)
 - Sidebar filter (filter visible pages by name)
 
 ---
@@ -266,7 +265,7 @@ Two-layer access control: workspace roles + page-level permissions.
 
 ## 13. Notifications
 
-**In-App:** Bell icon with unread badge. Triggers: @mentions, comment replies, thread resolutions, page access granted, workspace invites. Real-time toast auto-dismisses after 5s.
+**In-App:** Bell icon with unread badge. Triggers: @mentions, comment replies, thread resolutions, page access granted, workspace invites. Real-time delivery via **Server-Sent Events (SSE)**; toast auto-dismisses after 5s.
 
 **Email:** Real-time, Daily digest (default), Weekly digest, or Off. Timezone-aware delivery.
 
@@ -274,37 +273,20 @@ Two-layer access control: workspace roles + page-level permissions.
 
 ---
 
-## 14. Plans & Pricing
-
-Three subscription tiers, applied per workspace. Fully configurable from Orbit Admin.
-
-| Plan | Price | Workspaces | Members | Storage |
-|------|-------|------------|---------|---------|
-| Free | $0/mo | 1 | 5 | 500 MB |
-| Pro | $12/mo | 3 | 25 | 10 GB |
-| Business | $25/mo | Unlimited | Unlimited | 100 GB |
-
-**Gated features (Pro/Business):** Calendar view, Gallery view, API access, page analytics
-
-All plan pricing, limits, feature flags, and landing-page copy are managed from Orbit Admin — no code deployment needed.
-
----
-
-## 15. Admin Panel
+## 14. Admin Panel
 
 **Orbit Admin** — internal operations tool for the Notelian platform team. Not accessible to end users.
 
 **Capabilities:**
 - User management (view, ban/unban, impersonate, revoke sessions)
-- Workspace management (view all workspaces, plan, members)
-- Plan override per workspace (for trials, pilots, grace periods)
-- Plan and pricing configuration
+- Workspace management (view all workspaces, members)
+- Template management (built-in templates via `/orbit/templates`)
 - Platform analytics
 - Audit trail (append-only log of all platform-team actions)
 
 ---
 
-## 16. File Storage
+## 15. File Storage
 
 Binary uploads stored in Cloudflare R2 and served via Cloudflare CDN. Covers page cover images, page icons, and all media blocks (Image, Video, Audio, File).
 
@@ -312,7 +294,7 @@ Binary uploads stored in Cloudflare R2 and served via Cloudflare CDN. Covers pag
 
 **Upload flow:** Pre-signed PUT URLs — files upload directly to R2, never transiting the app server.
 
-**Per-type size limits (at Business plan tier):**
+**Per-type size limits:**
 
 | Type | Max size |
 |------|---------|
@@ -322,13 +304,9 @@ Binary uploads stored in Cloudflare R2 and served via Cloudflare CDN. Covers pag
 | Video / Audio block | 50 MB |
 | File block | 100 MB |
 
-**Plan-level upload cap (additional constraint):** Free: 5 MB · Pro: 25 MB · Business: per-type limits above
-
-**Storage quota per workspace:** Free: 500 MB · Pro: 10 GB · Business: 100 GB
-
 ---
 
-## 17. MVP Scope
+## 16. MVP Scope
 
 ### Included in MVP
 
@@ -339,15 +317,14 @@ Binary uploads stored in Cloudflare R2 and served via Cloudflare CDN. Covers pag
 - [x] Pages (unlimited hierarchy, icon, cover, export)
 - [x] Block-based editor (all block types)
 - [x] Templates (built-in + custom)
-- [x] Databases (Table and Board views for all plans; Calendar and Gallery views for Pro/Business)
+- [x] Databases (Table, Board, Calendar, and Gallery views)
 - [x] Database Properties (all 11 types + system properties)
 - [x] Global Search (PostgreSQL FTS)
 - [x] Comments & Mentions
 - [x] Permissions & Sharing (roles, page permissions, public links, guests)
 - [x] In-app and Email Notifications
-- [x] Plans & Pricing (Free / Pro / Business via Orbit Admin)
-- [x] Orbit Admin (user + workspace + plan management)
-- [x] File Storage (Cloudflare R2, pre-signed direct uploads, plan-based quotas)
+- [x] Orbit Admin (user + workspace + template management)
+- [x] File Storage (Cloudflare R2, pre-signed direct uploads)
 
 ### Excluded from MVP (Post-MVP)
 
@@ -365,7 +342,7 @@ Binary uploads stored in Cloudflare R2 and served via Cloudflare CDN. Covers pag
 
 ---
 
-## 18. Tech Stack
+## 17. Tech Stack
 
 | Layer | Technology | Purpose |
 |-------|-----------|---------|
@@ -377,7 +354,7 @@ Binary uploads stored in Cloudflare R2 and served via Cloudflare CDN. Covers pag
 | Editor | TipTap (ProseMirror-based) | Block-based rich text editor |
 | Job Queue | pg-boss | Notifications, email digests, cleanup jobs |
 | File Storage | S3 / Cloudflare R2 | Images, covers, file attachments |
-| Email | Resend / Postmark | Transactional email delivery |
+| Email | Resend | Transactional email delivery |
 | Admin | Orbit Admin | Internal ops dashboard |
 
 ---

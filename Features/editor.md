@@ -53,7 +53,7 @@ The Notelian editor is block-based — every piece of content is a discrete bloc
 - Images can be uploaded or embedded via URL
 - Video and audio can be uploaded or embedded from a URL (YouTube, Vimeo, etc.)
 - Uploaded files are stored in S3 / Cloudflare R2
-- **Plan upload cap:** Free plan limits any single upload to 5 MB; Pro to 25 MB. The per-type limits above apply at the Business tier. See [File Storage](./file-storage.md) for details.
+- See [File Storage](./file-storage.md) for per-type size limits.
 
 ### Structure Blocks
 
@@ -68,7 +68,7 @@ The Notelian editor is block-based — every piece of content is a discrete bloc
 | Block | Slash Command | Features |
 |-------|--------------|---------|
 | Code Block | `/code` | Syntax highlighting (50+ languages), line numbers toggle, copy button |
-| Equation | `/equation` | LaTeX rendering; inline mode and block mode |
+| Equation | `/equation` | LaTeX rendering via **KaTeX**; inline mode and block mode |
 
 ### Reference Blocks
 
@@ -116,7 +116,7 @@ Select any text to reveal the floating formatting toolbar.
 | Underline | U̲ | `Ctrl+U` / `Cmd+U` |
 | Strikethrough | ~~S~~ | — |
 | Inline Code | `</>` | `Ctrl+E` / `Cmd+E` |
-| Hyperlink | 🔗 | `Ctrl+K` / `Cmd+K` (on selection) |
+| Hyperlink | 🔗 | `Ctrl+K` / `Cmd+K` (on selection — takes priority over global search when text is selected) |
 | Text Color | A | — (opens color picker) |
 | Highlight | 🖍 | — (opens highlight color picker) |
 | Comment | 💬 | — (opens comment composer) |
@@ -213,7 +213,7 @@ Blocks can be nested inside other blocks:
   - `"Saving..."` — write in progress
   - `"Saved"` — last save successful
   - `"Offline — changes will sync when reconnected"` — no network
-- Offline edits are queued locally and synced automatically when connectivity is restored
+- Offline edits are queued in **IndexedDB** (persisted across browser refreshes) and synced automatically when connectivity is restored
 - If a sync conflict occurs (same page edited on two devices offline), the most recent save wins
 
 ---

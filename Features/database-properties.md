@@ -285,7 +285,7 @@ PropertyValue
 ## Business Rules
 
 1. Every database has a built-in **Title** property that is always visible and cannot be deleted or reordered below position 1.
-2. A database can have a maximum of 50 user-created properties. System properties do not count toward this limit.
+2. A database can have a maximum of 50 user-created properties. System properties and back-relation properties do not count toward this limit.
 3. Deleting a property permanently deletes all values for that property across all entries. This cannot be undone.
 4. Property type changes that cannot convert values (e.g., any type → Relation) clear all existing values after confirmation.
 5. Back-relation properties are auto-created and read-only — they cannot be renamed, reordered, or deleted directly. Deleting the source Relation property removes the back-relation too.

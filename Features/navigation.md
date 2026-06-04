@@ -59,7 +59,7 @@ The sidebar is the primary navigation structure in Notelian. It gives users inst
 
 | Button | Action | Shortcut |
 |--------|--------|---------|
-| Search | Opens global search dialog | `Ctrl+K` / `Cmd+K` |
+| Search | Opens global search dialog | `Ctrl+K` / `Cmd+K` (when no text is selected in the editor) |
 | Notifications | Opens notification center panel | `Ctrl+Shift+N` |
 | Settings | Opens workspace settings | — |
 | New Page (+) | Creates a new top-level page | `Ctrl+N` / `Cmd+N` |
@@ -126,7 +126,7 @@ Hierarchical display of all pages in the workspace.
 ### 8. Trash
 
 - Located at the bottom of the sidebar
-- Shows all pages deleted within the current plan's retention window (30 days Free / 90 days Pro / 1 year Business)
+- Shows all pages deleted within the last 30 days
 - Pages in Trash are listed in deletion order (most recent first)
 - Each entry has: `"Restore"` and `"Delete Permanently"` actions
 - After the retention period, pages are auto-deleted permanently (no recovery)
@@ -199,7 +199,7 @@ Favorite
 2. A user only sees pages they have permission to access in the sidebar.
 3. Private pages of other users are completely hidden — they do not appear in the tree even with a placeholder.
 4. Favorites are personal and workspace-specific — a page favorited in Workspace A does not appear as a favorite in Workspace B.
-5. Trash retains pages for the plan's retention period (30 days on Free, 90 days on Pro, 1 year on Business). After this period, pages are permanently and irreversibly deleted.
+5. Trash retains pages for 30 days. After this period, pages are permanently and irreversibly deleted.
 6. Restoring a page from Trash restores it to its original location in the page tree, if the parent still exists. If the parent was also deleted, the page is restored to the top level.
 7. Recently visited list is per-user and per-workspace — max 10 entries, oldest entry dropped when a new one is added.
 8. Sidebar resize preferences are saved per-user and persist across sessions.

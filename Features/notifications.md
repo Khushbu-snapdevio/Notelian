@@ -4,7 +4,7 @@
 
 Notifications keep users informed about activity that involves them — @mentions, replies to their comments, and changes to pages they care about. Notelian delivers notifications in-app in real time and via email on a configurable schedule.
 
-**Powered by:** pg-boss (PostgreSQL-backed job queue) — no Redis or separate message broker needed.
+**Powered by:** pg-boss (PostgreSQL-backed job queue) for delivery and scheduling; **Server-Sent Events (SSE)** for real-time in-app push — no Redis or separate message broker needed.
 
 ---
 
@@ -200,7 +200,7 @@ All notification jobs are managed by **pg-boss** within the same PostgreSQL data
 - Notification writes are **transactional** — if the triggering event (comment, @mention) fails to save, no notification is enqueued
 - Failed delivery jobs retry up to **3 times** with exponential backoff (1min, 5min, 25min)
 - Failed jobs after 3 retries are logged to the error monitoring system
-- Email sending uses a transactional email provider (e.g., Resend, Postmark)
+- Email sending uses **Resend** as the transactional email provider
 
 ---
 

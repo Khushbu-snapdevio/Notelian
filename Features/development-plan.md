@@ -18,9 +18,10 @@ This document covers Notelian's technical architecture, development phases, and 
 | Editor | TipTap | ProseMirror-based, extensible block editor |
 | Job Queue | pg-boss | PostgreSQL-backed — notifications, email, cleanup |
 | File Storage | S3 / Cloudflare R2 | Page covers, media blocks, file attachments |
-| Email | Resend / Postmark | Transactional email delivery |
+| Email | Resend | Transactional email delivery |
 | Admin | Orbit Admin | Custom internal ops dashboard (`/orbit`) |
-| Styling | Tailwind CSS | Utility-first, dark mode support |
+| Styling | Tailwind CSS | Utility-first CSS framework |
+| Math Rendering | KaTeX | LaTeX equation rendering in editor blocks |
 | Testing | Vitest + Playwright | Unit + integration + E2E |
 | Deployment | Vercel / Railway | Next.js hosting + managed PostgreSQL |
 
@@ -35,7 +36,6 @@ notelian/
 │   ├── (app)/[workspace]/      # Main workspace UI
 │   │   ├── [pageId]/           # Page editor
 │   │   └── settings/           # Workspace settings
-│   ├── pricing/                # Public pricing page
 │   ├── orbit/                  # Orbit Admin (platform team only)
 │   └── api/                    # API route handlers
 ├── components/                 # Shared UI components
@@ -45,8 +45,7 @@ notelian/
 ├── lib/                        # Business logic and utilities
 │   ├── auth/                   # Better Auth configuration
 │   ├── db/                     # Drizzle schema and queries
-│   ├── notifications/          # Notification triggers and pg-boss jobs
-│   └── plans/                  # Plan enforcement utilities
+│   └── notifications/          # Notification triggers and pg-boss jobs
 ├── drizzle/                    # Database migrations
 └── public/                     # Static assets
 ```
@@ -67,15 +66,15 @@ notelian/
 - Pages — unlimited hierarchy, icon, cover, version history, export
 - Block-based editor — all block types, slash command, auto-save
 - Templates — built-in gallery + custom workspace templates
-- Databases — Table and Board views, filters, sorting, grouping
+- Databases — all 4 views (Table, Board, Calendar, Gallery), filters, sorting, grouping
 - Database properties — all 11 types + system properties
 - Global search — PostgreSQL full-text search
 - Comments — block, text-level, and page-level; resolve/reopen threads
 - Mentions — @name, @page, @date
 - Permissions — workspace roles + page-level access, public links, guests
 - Notifications — in-app (SSE), email digest (pg-boss)
-- Plans & Pricing — Free / Pro / Business via Orbit Admin
-- Orbit Admin — user, workspace, and plan management
+- Orbit Admin — user, workspace, and template management
+- File Storage (Cloudflare R2, pre-signed direct uploads)
 
 **Estimated timeline:** 16–20 weeks
 
@@ -93,6 +92,7 @@ notelian/
 - Password-protected public links
 - Granular notification preferences (per-event-type toggles)
 - Mobile web — read-only optimized experience
+- Dark mode / appearance settings
 
 **Estimated timeline:** 12–16 weeks after Phase 1
 
@@ -108,7 +108,6 @@ notelian/
 - SSO / SAML (enterprise identity providers)
 - Native iOS app
 - Native Android app
-- Stripe billing self-service
 - GitHub OAuth provider
 - Import from Notion (page structure and content)
 
@@ -199,10 +198,6 @@ Collaboration:
   notifications
   notification_preferences
 
-Plans:
-  plans, plan_limits, plan_feature_flags, plan_bullets
-  plan_faq_items, plan_universal_bullets
-
 User preferences:
   user_preferences
   user_hint_states
@@ -228,7 +223,7 @@ Admin:
 | `S3_ACCESS_KEY_ID` | S3 / R2 access key |
 | `S3_SECRET_ACCESS_KEY` | S3 / R2 secret key |
 | `EMAIL_FROM` | Sender email address for transactional email |
-| `RESEND_API_KEY` | Resend API key (or Postmark if used) |
+| `RESEND_API_KEY` | Resend API key |
 | `NEXT_PUBLIC_APP_URL` | Public base URL (e.g. `https://notelian.app`) |
 
 ---
@@ -258,7 +253,7 @@ npm run dev
 
 | Layer | Tool | Coverage target |
 |-------|------|----------------|
-| Unit tests | Vitest | Business logic, utilities, plan enforcement |
+| Unit tests | Vitest | Business logic, utilities |
 | Integration tests | Vitest + real PostgreSQL | API routes, database queries |
 | E2E tests | Playwright | Critical user flows (sign up, create page, invite member) |
 
