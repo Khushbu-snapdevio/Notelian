@@ -134,7 +134,7 @@ Accessible from the page options menu (`···`) or `"Page"` button in the top-r
 
 - `···` → `"Delete"` — moves the page to **Trash** (does not delete immediately)
 - Deleted pages are visible in the Trash section of the sidebar
-- **Retention:** 30 days (Free), 90 days (Pro), 1 year (Business). After the plan's retention period, permanently auto-deleted.
+- **Retention:** 30 days. After this period, the page is permanently auto-deleted.
 - **Warning:** At 7 days remaining before auto-deletion, the page shows a warning banner when viewed from Trash.
 - Restore: moves page back to its original parent (or workspace root if parent was also deleted)
 - Permanent Delete: immediately removes the page and all its content
@@ -182,7 +182,7 @@ Available from `···` → `"Export"`
 
 - Access from `···` → `"Version History"`
 - Shows a list of saved snapshots of the page at previous points in time
-- Retention by plan: Free=7 days, Pro=90 days, Business=1 year
+- Retention: 7 days
 - Click a version to preview it (read-only)
 - `"Restore this version"` button replaces current content with the selected snapshot
 - Restoring creates a new version entry — nothing is permanently lost
@@ -239,7 +239,7 @@ PageVersion
 └── created_at          (timestamp)
 ```
 
-Versions are created automatically on each auto-save (debounced — one version per 10-minute window per user). The most recent version within the plan's retention window is always kept. Older versions outside the retention window are pruned by the `auto-delete-expired-versions` pg-boss job.
+Versions are created automatically on each auto-save (debounced — one version per 10-minute window per user). The most recent version within the 7-day retention window is always kept. Older versions outside the retention window are pruned by the `auto-delete-expired-versions` pg-boss job.
 
 ---
 
@@ -247,8 +247,8 @@ Versions are created automatically on each auto-save (debounced — one version 
 
 | Job | Schedule | Description |
 |-----|----------|-------------|
-| `auto-delete-expired-trash` | Daily at 02:00 UTC | Permanently deletes pages where `is_deleted = true` and `deleted_at` exceeds the workspace's plan retention (30 days Free / 90 days Pro / 1 year Business). Cascades to subpages and queues R2 file deletion for all file blocks on those pages. |
-| `warn-expiring-trash` | Daily at 02:00 UTC | For pages approaching their plan's retention deadline by 7 days or fewer, sets a flag so the warning banner appears when the page is viewed from Trash. |
+| `auto-delete-expired-trash` | Daily at 02:00 UTC | Permanently deletes pages where `is_deleted = true` and `deleted_at` exceeds the 30-day trash retention. Cascades to subpages and queues object-storage file deletion for all file blocks on those pages. |
+| `warn-expiring-trash` | Daily at 02:00 UTC | For pages within 7 days of the 30-day auto-deletion deadline, sets a flag so the warning banner appears when the page is viewed from Trash. |
 
 ---
 
@@ -285,11 +285,11 @@ Versions are created automatically on each auto-save (debounced — one version 
 
 1. Every page must have a title — the title field defaults to `"Untitled"` and is never empty.
 2. Deleting a page moves it to Trash; it is not permanently removed immediately.
-3. Pages in Trash are permanently auto-deleted after the plan's retention period (30 days on Free, 90 days on Pro, 1 year on Business). There is no recovery after auto-deletion.
+3. Pages in Trash are permanently auto-deleted after the 30-day retention period. There is no recovery after auto-deletion.
 4. Duplicating a page does not copy its permissions or comments.
 5. Moving a page to a new parent causes it to inherit the new parent's permissions, unless the page already has custom permissions set.
 6. A page's URL is based on its ID, not its title — renaming a page never breaks existing links.
-7. Page version history is limited by plan (7 days free, 90 days Pro, 1 year Business).
+7. Page version history is retained for 7 days.
 8. A locked page cannot be edited by anyone until unlocked — including workspace Admins.
 9. Only users with Full Access on a page can lock or unlock it.
 10. Subpages of a deleted page are also moved to Trash together.
@@ -300,7 +300,7 @@ Versions are created automatically on each auto-save (debounced — one version 
 
 - Page templates per page (different from workspace-level templates)
 - Real-time collaborative editing / multiplayer cursors (Phase 2)
-- Page analytics (views, unique visitors — Phase 2 for Pro plan)
+- Page analytics (views, unique visitors — Phase 2)
 - Password-protected pages
 - Page comments visible in sidebar (comment count badge only)
 - Bulk export (export multiple pages at once)

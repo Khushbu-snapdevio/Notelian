@@ -56,6 +56,7 @@ User identity and session management.
 **Features:**
 - Sign up (Email + Password)
 - Sign in / Sign out
+- Magic link (passwordless email sign in)
 - OAuth login (Google)
 - Forgot password / Reset password
 - Email verification
@@ -288,11 +289,11 @@ Two-layer access control: workspace roles + page-level permissions.
 
 ## 15. File Storage
 
-Binary uploads stored in AWS S3 and served via Amazon CloudFront CDN. Covers page cover images, page icons, and all media blocks (Image, Video, Audio, File).
+Binary uploads stored in S3-compatible object storage and served via a CDN. Covers page cover images, page icons, and all media blocks (Image, Video, Audio, File).
 
-**Provider:** AWS S3
+**Provider:** Any S3-compatible object storage (AWS S3, Cloudflare R2, MinIO, Backblaze B2, …)
 
-**Upload flow:** Pre-signed PUT URLs — files upload directly to R2, never transiting the app server.
+**Upload flow:** Pre-signed PUT URLs — files upload directly to the storage bucket, never transiting the app server.
 
 **Per-type size limits:**
 
@@ -310,7 +311,7 @@ Binary uploads stored in AWS S3 and served via Amazon CloudFront CDN. Covers pag
 
 ### Included in MVP
 
-- [x] Authentication (Email + Google OAuth)
+- [x] Authentication (Email + Password, magic link, Google OAuth)
 - [x] Workspace (create, invite, roles)
 - [x] Onboarding (wizard, tour, hints)
 - [x] Sidebar navigation with page tree
@@ -324,7 +325,7 @@ Binary uploads stored in AWS S3 and served via Amazon CloudFront CDN. Covers pag
 - [x] Permissions & Sharing (roles, page permissions, public links, guests)
 - [x] In-app and Email Notifications
 - [x] Orbit Admin (user + workspace + template management)
-- [x] File Storage (AWS S3 + CloudFront, pre-signed direct uploads)
+- [x] File Storage (S3-compatible object storage + CDN, pre-signed direct uploads)
 
 ### Excluded from MVP (Post-MVP)
 
@@ -350,10 +351,10 @@ Binary uploads stored in AWS S3 and served via Amazon CloudFront CDN. Covers pag
 | Backend | Next.js API Routes / Server Actions | API layer |
 | Database | PostgreSQL | Primary data store + full-text search |
 | ORM | Drizzle ORM | Type-safe database access |
-| Auth | Better Auth + Admin Plugin | Sessions, OAuth, user management |
+| Auth | Better Auth + Admin Plugin | Sessions, magic link, OAuth, user management |
 | Editor | TipTap (ProseMirror-based) | Block-based rich text editor |
 | Job Queue | pg-boss | Notifications, email digests, cleanup jobs |
-| File Storage | AWS S3 + CloudFront | Images, covers, file attachments |
+| File Storage | S3-compatible object storage + CDN | Images, covers, file attachments |
 | Email | Nodemailer (SMTP) | Transactional email delivery |
 | Admin | Orbit Admin | Internal ops dashboard |
 

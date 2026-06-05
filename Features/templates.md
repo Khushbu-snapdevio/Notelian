@@ -308,7 +308,7 @@ Template
 4. Only the template creator or a workspace Admin can edit or delete a custom template.
 5. Built-in templates are authored and managed exclusively by the Notelian team via Orbit Admin (`/orbit/templates`). Workspace members and workspace Admins have no ability to create, edit, or delete built-in templates.
 6. Built-in templates have a `draft` / `published` status. Only published templates appear in the user-facing gallery. Draft templates are visible only in Orbit Admin.
-7. The Free plan allows up to 5 custom templates per workspace. Pro and Business have no limit.
+7. Each workspace allows up to 5 custom templates.
 8. Template Button block content is part of the page's block structure — it is not a separate template stored in the template library.
 9. Database entries are never included when saving a page as a template — only the database schema and views are preserved.
 

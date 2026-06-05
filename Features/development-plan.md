@@ -14,10 +14,10 @@ This document covers Notelian's technical architecture, development phases, and 
 | Language | TypeScript | Strict mode enabled |
 | Database | PostgreSQL | v16+ — primary store, full-text search, job queue |
 | ORM | Drizzle ORM | Type-safe queries, migrations, schema-as-code |
-| Auth | Better Auth + Admin Plugin | Database-backed sessions, OAuth, impersonation |
+| Auth | Better Auth + Admin Plugin | Database-backed sessions, magic link, OAuth, impersonation |
 | Editor | TipTap | ProseMirror-based, extensible block editor |
 | Job Queue | pg-boss | PostgreSQL-backed — notifications, email, cleanup |
-| File Storage | AWS S3 | Page covers, media blocks, file attachments |
+| File Storage | S3-compatible object storage | Page covers, media blocks, file attachments |
 | Email | Nodemailer (SMTP) | Transactional email delivery via SMTP |
 | Admin | Orbit Admin | Custom internal ops dashboard (`/orbit`) |
 | Styling | Tailwind CSS | Utility-first CSS framework |
@@ -59,7 +59,7 @@ notelian/
 **Goal:** Core workspace, writing, and collaboration features.
 
 **Scope:**
-- Authentication (Email + Google OAuth, Better Auth)
+- Authentication (Email + Password, magic link, Google OAuth — Better Auth)
 - Workspace creation, members, and roles
 - Onboarding wizard, tooltip tour, contextual hints
 - Sidebar navigation with page tree and drag-and-drop
@@ -74,7 +74,7 @@ notelian/
 - Permissions — workspace roles + page-level access, public links, guests
 - Notifications — in-app (SSE), email digest (pg-boss)
 - Orbit Admin — user, workspace, and template management
-- File Storage (AWS S3, pre-signed direct uploads)
+- File Storage (S3-compatible object storage, pre-signed direct uploads)
 
 **Estimated timeline:** 16–20 weeks
 
@@ -218,11 +218,12 @@ Admin:
 | `BETTER_AUTH_SECRET` | Secret for Better Auth session signing |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
-| `S3_BUCKET` | AWS S3 bucket name |
-| `S3_REGION` | AWS region (e.g. `us-east-1`) |
-| `S3_ACCESS_KEY_ID` | AWS IAM access key ID |
-| `S3_SECRET_ACCESS_KEY` | AWS IAM secret access key |
-| `CDN_URL` | CloudFront CDN base URL for serving uploaded files |
+| `S3_ENDPOINT` | S3-compatible storage endpoint (omit/blank for AWS S3; set for R2, MinIO, B2, etc.) |
+| `S3_BUCKET` | Storage bucket name |
+| `S3_REGION` | Bucket region (e.g. `us-east-1`, or `auto` for some providers) |
+| `S3_ACCESS_KEY_ID` | Storage access key ID |
+| `S3_SECRET_ACCESS_KEY` | Storage secret access key |
+| `CDN_URL` | CDN base URL for serving uploaded files |
 | `EMAIL_FROM` | Sender address (e.g. `noreply@notelian.app`) |
 | `SMTP_HOST` | SMTP server hostname (e.g. `smtp.sendgrid.net`) |
 | `SMTP_PORT` | SMTP port (`587` for STARTTLS, `465` for TLS) |
@@ -237,17 +238,17 @@ Admin:
 
 ```bash
 # Install dependencies
-npm install
+pnpm install
 
 # Set up environment
 cp .env.example .env.local
 # Fill in DATABASE_URL and other required variables
 
 # Run database migrations
-npm run db:migrate
+pnpm run db:migrate
 
 # Start development server
-npm run dev
+pnpm run dev
 ```
 
 **Prerequisites:** Node.js v20+, PostgreSQL v16+
@@ -269,7 +270,7 @@ npm run dev
 **Production stack:**
 - Next.js app: Vercel (or Railway)
 - PostgreSQL: Supabase / Neon / Railway managed PostgreSQL
-- File storage: AWS S3 + CloudFront CDN
+- File storage: S3-compatible object storage + CDN
 - Email: Nodemailer (SMTP)
 
 **CI/CD:**

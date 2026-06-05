@@ -19,7 +19,8 @@ Authentication handles user identity — who you are, how you prove it, and how 
 | Flow | Description |
 |------|-------------|
 | Sign Up | New user creates account with email + password |
-| Sign In | Existing user signs in with email + password or Google OAuth |
+| Sign In | Existing user signs in with email + password, magic link, or Google OAuth |
+| Magic Link | Passwordless sign in / sign up via a one-time email link |
 | OAuth | Sign in / sign up via Google |
 | Email Verification | Verify email address after sign up |
 | Forgot Password | Request password reset link via email |
@@ -67,8 +68,7 @@ Authentication handles user identity — who you are, how you prove it, and how 
 
 ### Rate Limiting
 
-- Max **5 failed attempts** per email per 15 minutes
-- After 5 failures: `"Too many login attempts. Please try again in 15 minutes."`
+- **No rate limit on sign in** — failed sign-in attempts are not throttled.
 
 ### Session Duration
 
@@ -77,7 +77,26 @@ Authentication handles user identity — who you are, how you prove it, and how 
 
 ---
 
-## 3. OAuth — Google
+## 3. Magic Link (Passwordless)
+
+Users can sign in or sign up without a password by requesting a one-time link sent to their email.
+
+### Flow
+
+1. User enters their email on `/sign-in` and chooses `"Email me a sign-in link"`
+2. **Always shows:** `"If an account exists with this email, a sign-in link has been sent."` (prevents email enumeration)
+3. Better Auth sends a magic link with a token valid for **15 minutes**, single-use
+4. User clicks the link → `GET /api/auth/magic-link/verify?token=:token`
+5. Better Auth verifies the token:
+   - **New email** (not in DB): account auto-created (email marked verified — the link proves ownership), redirected to `/onboarding`
+   - **Existing user**: session created, redirected to last active workspace
+6. The link is invalidated immediately after use
+
+> A successful magic-link sign-in counts as email verification — clicking the link proves the user controls the address.
+
+---
+
+## 4. OAuth — Google
 
 Users can sign up or sign in using their Google account. No password required.
 
@@ -98,7 +117,7 @@ Users can sign up or sign in using their Google account. No password required.
 
 ---
 
-## 4. Email Verification
+## 5. Email Verification
 
 Every user who signs up with email + password must verify their email.
 
@@ -118,11 +137,11 @@ Every user who signs up with email + password must verify their email.
 ### Resend
 
 - Available from banner or `/settings/account`
-- Rate limited: max **3 resends per hour** per user
+- **No rate limit** — resends are not throttled
 
 ---
 
-## 5. Forgot Password
+## 6. Forgot Password
 
 ### Flow
 
@@ -140,7 +159,7 @@ Every user who signs up with email + password must verify their email.
 
 ---
 
-## 6. Session Management
+## 7. Session Management
 
 ### Access
 
@@ -164,7 +183,7 @@ Each active session shows:
 
 ---
 
-## 7. Account Settings
+## 8. Account Settings
 
 Available at `/settings/account`
 
@@ -186,14 +205,14 @@ Available at `/settings/account`
 | Pages created in shared workspaces | Remain in the workspace; `created_by` is set to null and displayed as `"Former Member"` |
 | Comments | Remain visible; author shown as `"Former Member"` |
 | Private pages (visible only to the deleted user) | **Permanently deleted** — no other user has access to them, so they cannot be recovered or reassigned |
-| Uploaded files on private pages | Deleted from R2 storage; workspace `bytes_used` decremented |
+| Uploaded files on private pages | Deleted from object storage; workspace `bytes_used` decremented |
 | Workspace memberships | Removed from all workspaces the user belonged to |
 
 Private page deletion is queued as a pg-boss job (`delete-user-private-pages`) that runs immediately on account deletion confirmation.
 
 ---
 
-## 8. Better Auth — Admin Plugin Features
+## 9. Better Auth — Admin Plugin Features
 
 Used by the Notelian platform team via **Orbit Admin** — not exposed to customers.
 
@@ -211,7 +230,7 @@ Used by the Notelian platform team via **Orbit Admin** — not exposed to custom
 
 | Job | Trigger | Description |
 |-----|---------|-------------|
-| `delete-user-private-pages` | On account deletion confirmation | Permanently deletes all private pages owned by the deleted user and queues R2 file deletion for any uploaded files on those pages. Runs immediately (not on a schedule). |
+| `delete-user-private-pages` | On account deletion confirmation | Permanently deletes all private pages owned by the deleted user and queues object-storage file deletion for any uploaded files on those pages. Runs immediately (not on a schedule). |
 
 ---
 
@@ -264,6 +283,8 @@ Better Auth exposes a unified handler at `/api/auth/[...all]`.
 |--------|----------|-------------|
 | POST | `/api/auth/sign-up/email` | Register with email + password |
 | POST | `/api/auth/sign-in/email` | Sign in with email + password |
+| POST | `/api/auth/sign-in/magic-link` | Request a magic-link sign-in email |
+| GET | `/api/auth/magic-link/verify?token=` | Verify magic link and create session |
 | GET | `/api/auth/sign-in/social?provider=google` | Initiate Google OAuth |
 | GET | `/api/auth/callback/google` | Google OAuth callback |
 | POST | `/api/auth/sign-out` | Sign out current session |
@@ -297,8 +318,8 @@ Better Auth exposes a unified handler at `/api/auth/[...all]`.
 
 | Concern | Mitigation |
 |---------|-----------|
-| Brute force | Rate limit: 5 attempts / 15 min per IP + email |
-| Email enumeration | Forgot password always returns same message |
+| Brute force | No sign-in rate limit (disabled per product decision) — mitigated by the strong password policy and immediate session revocation on ban |
+| Email enumeration | Forgot password and magic-link requests always return the same message |
 | Session hijacking | Database-backed sessions; token hashed in DB |
 | Token reuse | Reset + verification tokens are single-use |
 | Password change | Revokes all sessions on change |
@@ -317,7 +338,7 @@ Better Auth exposes a unified handler at `/api/auth/[...all]`.
 5. Password reset invalidates all existing sessions — the user must log in again on all devices.
 6. Reset tokens and verification tokens are single-use and expire (1 hour for reset, 24 hours for verification).
 7. A user cannot delete their account if they are the sole Admin of any workspace — ownership must be transferred first.
-8. Verification email resends are rate-limited to 3 per hour to prevent abuse.
+8. Verification email resends are not rate-limited.
 9. Forgot password always returns the same response regardless of whether the email exists — prevents account enumeration.
 10. Sessions use sliding expiry — TTL resets on each authenticated request, keeping active users logged in.
 11. On account deletion: shared-workspace content (pages, comments) is retained with `"Former Member"` attribution. Private pages owned exclusively by the deleted user are permanently and irreversibly deleted — they are inaccessible to anyone else and cannot be recovered.
@@ -327,7 +348,6 @@ Better Auth exposes a unified handler at `/api/auth/[...all]`.
 ## Out of Scope (MVP)
 
 - Two-factor authentication (2FA / TOTP)
-- Magic link / passwordless sign in
 - SSO / SAML (enterprise identity providers)
 - Passkeys / WebAuthn
 - Email address change (requires re-verification flow — Phase 2)

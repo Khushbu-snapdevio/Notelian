@@ -52,7 +52,7 @@ The Notelian editor is block-based — every piece of content is a discrete bloc
 
 - Images can be uploaded or embedded via URL
 - Video and audio can be uploaded or embedded from a URL (YouTube, Vimeo, etc.)
-- Uploaded files are stored in S3 / Cloudflare R2
+- Uploaded files are stored in S3-compatible object storage (served via a CDN)
 - See [File Storage](./file-storage.md) for per-type size limits.
 
 ### Structure Blocks
