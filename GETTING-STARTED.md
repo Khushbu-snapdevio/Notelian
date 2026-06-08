@@ -290,7 +290,7 @@ MAXMIND_LICENSE_KEY=<optional — session-list geolocation>
 ### 5.15 File Storage — *where uploads go*
 - **Stored in:** S3-compatible object storage · **Served via:** a CDN in front of the bucket
 - Covers: page cover images, page icons, **user avatars, workspace icons**, and all media blocks (Image, Video, Audio, File)
-- **Workspace storage quota** is tracked per workspace (`WorkspaceStorageUsage`) and enforced before each upload; the bar turns amber at 90% and blocks uploads at 100%. **Decide the quota ceiling before building enforcement** (currently unspecified — see §10).
+- **Workspace storage quota** is **5 GB per workspace**, tracked per workspace (`WorkspaceStorageUsage`) and enforced before each upload; the bar turns amber at 90% (4.5 GB) and blocks uploads at 100% (5 GB).
 - **Upload flow:** pre-signed PUT URLs — client uploads **directly to the storage bucket**, never through the app server
   - `POST /api/uploads/sign` → get signed URL + objectKey
   - `PUT {uploadUrl}` → upload bytes straight to the bucket
@@ -458,7 +458,7 @@ Fixed limits to enforce in code, collected from across the feature specs:
 | Trash retention | 30 days | Pages, Navigation |
 | Page version history | 7 days | Pages |
 | Custom templates / workspace | 5 | Templates |
-| Workspace storage quota | **TBD — decide before building enforcement** | File Storage |
+| Workspace storage quota | 5 GB per workspace | File Storage |
 | Properties per database | 50 | Database Properties |
 | Stacked sort rules per view | 5 | Databases |
 | Recently visited | 10 recent (Favorites are uncapped) | Navigation |
@@ -509,4 +509,4 @@ Real-time multiplayer (P2) · public REST API & webhooks (P3) · SSO/SAML (P3) �
 
 ---
 
-*Single-file development reference for Notelian. Last updated: 2026-06-05.*
+*Single-file development reference for Notelian. Last updated: 2026-06-08.*

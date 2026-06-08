@@ -258,10 +258,10 @@ DatabaseEntry (extends Page — each entry is a page)
 3. Switching views never modifies the underlying data — views are lenses on the same data set.
 4. Board view requires a Select-type property to group by. If no Select property exists, the user is prompted to create one.
 5. Calendar view requires a Date-type property. If none exists, the user is prompted to create one.
-7. Filters and sorts are saved per view — changing filters on one view does not affect other views.
-8. Deleting a view does not delete any entries.
-9. An entry deleted from a database is moved to Trash — it can be restored within 30 days.
-10. An inline database is a full database — it has the same capabilities as a full-page database.
+6. Filters and sorts are saved per view — changing filters on one view does not affect other views.
+7. Deleting a view does not delete any entries.
+8. An entry deleted from a database is moved to Trash — it can be restored within 30 days.
+9. An inline database is a full database — it has the same capabilities as a full-page database.
 
 ---
 

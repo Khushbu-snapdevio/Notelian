@@ -74,6 +74,8 @@ These limits are enforced at the `/api/uploads/sign` step — if the declared si
 
 Storage usage is calculated as the sum of all file sizes stored in the workspace. Database content (text, block metadata) does not count toward storage.
 
+**Workspace storage quota:** **5 GB per workspace** (MVP). All uploaded files in the workspace count toward this ceiling.
+
 ## Storage Usage Enforcement
 
 ### Pre-upload check
@@ -82,6 +84,7 @@ Before issuing a pre-signed URL, the API checks:
 
 1. Current workspace storage usage (from `WorkspaceStorageUsage.bytes_used`)
 2. Requested file size
+3. Whether `bytes_used + requested size` would exceed the **5 GB** workspace quota — if so, the request is rejected before any bytes are sent
 
 ### Usage tracking
 
@@ -99,13 +102,13 @@ Shown in **Workspace Settings → General** (visible to all members, admin can s
 ┌────────────────────────────────────────────────┐
 │ Storage                                         │
 │                                                 │
-│  [████████░░░░░░░░░░░░░░] 4.2 GB used           │
+│  [████████░░░░░░░░░░░░░░] 4.2 GB of 5 GB used   │
 │                                                 │
 └────────────────────────────────────────────────┘
 ```
 
-- Progress bar turns amber at 90% used
-- Progress bar turns red at 100% used (new uploads blocked)
+- Progress bar turns amber at 90% used (4.5 GB of the 5 GB quota)
+- Progress bar turns red at 100% used (5 GB — new uploads blocked)
 
 ---
 
@@ -198,7 +201,5 @@ WorkspaceStorageUsage
 
 - Image resizing / optimization on upload (Phase 2)
 - Video transcoding (embed via URL is the MVP path for large videos)
-- Per-member storage breakdown
-- Storage usage history / graph
 - Per-member storage breakdown
 - Storage usage history / graph

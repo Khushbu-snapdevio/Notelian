@@ -142,6 +142,7 @@ All Orbit Admin endpoints require `is_platform_admin = true` on the authenticate
 | GET | `/api/orbit/workspaces` | List all workspaces (paginated) |
 | GET | `/api/orbit/workspaces/:id` | Get workspace detail |
 | DELETE | `/api/orbit/workspaces/:id` | Force delete workspace |
+
 ### Audit
 
 | Method | Endpoint | Description |
@@ -175,7 +176,7 @@ All Orbit Admin endpoints require `is_platform_admin = true` on the authenticate
 4. Banning a user immediately revokes all their active sessions — the ban takes effect with no grace period.
 5. Force-deleting a workspace permanently removes all its data — this cannot be undone. Requires explicit text confirmation.
 6. Platform Admins cannot see private page content — Orbit Admin only exposes private page titles for compliance.
-8. Analytics data shown in Orbit Admin is aggregated — individual user browsing or content is not surfaced.
+7. Analytics data shown in Orbit Admin is aggregated — individual user browsing or content is not surfaced.
 
 ---
 

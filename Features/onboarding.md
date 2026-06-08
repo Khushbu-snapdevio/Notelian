@@ -67,7 +67,7 @@ Grid of 5 built-in templates to start with:
 |----------|----------|
 | Meeting Notes | Teams with recurring standups or meetings |
 | Project Tracker | Database-based project and task tracking |
-| Personal Journal | Daily writing and reflection |
+| Daily Journal | Daily writing and reflection |
 | Team Wiki | Shared knowledge base |
 | Blank Page | Start from scratch |
 

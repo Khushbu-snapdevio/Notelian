@@ -45,7 +45,10 @@ notelian/
 ├── lib/                        # Business logic and utilities
 │   ├── auth/                   # Better Auth configuration
 │   ├── db/                     # Drizzle schema and queries
-│   └── notifications/          # Notification triggers and pg-boss jobs
+│   ├── jobs/                   # pg-boss job definitions + registration
+│   ├── notifications/          # Notification triggers
+│   └── storage/                # S3 pre-signed URL helpers
+├── worker/                     # pg-boss worker entry point (pnpm worker)
 ├── drizzle/                    # Database migrations
 └── public/                     # Static assets
 ```
@@ -233,6 +236,7 @@ Admin:
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string |
 | `BETTER_AUTH_SECRET` | Secret for Better Auth session signing |
+| `BETTER_AUTH_URL` | Base URL Better Auth uses to build OAuth callbacks (matches `NEXT_PUBLIC_APP_URL`) |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
 | `S3_ENDPOINT` | S3-compatible storage endpoint (leave blank for the region default; set a custom endpoint URL otherwise) |
@@ -248,6 +252,7 @@ Admin:
 | `SMTP_PASSWORD` | SMTP authentication password |
 | `SMTP_SECURE` | `true` for TLS (port 465), `false` for STARTTLS (port 587) |
 | `NEXT_PUBLIC_APP_URL` | Public base URL (e.g. `https://notelian.app`) |
+| `MAXMIND_LICENSE_KEY` | *Optional* — GeoIP lookup for the session list; omit to disable location display |
 
 ---
 
@@ -261,12 +266,18 @@ pnpm install
 cp .env.example .env.local
 # Fill in DATABASE_URL and other required variables
 
-# Run database migrations
-pnpm run db:migrate
+# Generate + apply database migrations
+pnpm run db:generate     # build migration SQL from the Drizzle schema
+pnpm run db:migrate      # apply migrations to the database
 
 # Start development server
 pnpm run dev
+
+# Start the background-job worker (separate terminal)
+pnpm run worker          # pg-boss — notifications, email digests, cleanup jobs
 ```
+
+> `pnpm run dev` alone does **not** process background jobs (email digests, trash auto-delete, version pruning, stale-upload cleanup). Run `pnpm run worker` in a second terminal or those features silently do nothing. See [GETTING-STARTED.md](../GETTING-STARTED.md) §8.
 
 **Prerequisites:** Node.js v20+, PostgreSQL v16+
 
@@ -298,4 +309,4 @@ pnpm run dev
 
 ---
 
-*Last updated: 2026-06-04*
+*Last updated: 2026-06-08*
