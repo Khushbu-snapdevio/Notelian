@@ -206,7 +206,7 @@ WorkspaceMember
 6. Removing a member does not delete their created pages — it only revokes their access.
 7. Workspace URL slug must be unique across the platform.
 8. Email invites expire after 7 days if not accepted.
-9. An unverified user (email not yet confirmed) cannot send member invites. Invites entered during the onboarding wizard are queued and sent automatically once the user verifies their email.
+9. Users sign in via magic link, which verifies their email on first use — so there is no unverified-account state, and invites entered during the onboarding wizard are sent immediately.
 10. Guest users (invited to specific pages) are not full workspace members and are listed separately.
 
 ---

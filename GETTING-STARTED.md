@@ -45,14 +45,13 @@ Set these up first — development is blocked without them. Each maps to one or 
 |---|----------------------|-----------------|----------|
 | 1 | **PostgreSQL database** | Local install, or managed: Supabase / Neon / Railway | App data, search, job queue |
 | 2 | **Better Auth secret** | Generate yourself: `openssl rand -base64 32` | Signing sessions |
-| 3 | **Google OAuth credentials** | [Google Cloud Console](https://console.cloud.google.com) → APIs & Services → Credentials → OAuth client ID (Web). Add redirect URI `http://localhost:3000/api/auth/callback/google` | "Sign in with Google" |
-| 4 | **S3-compatible storage bucket** | Any S3-compatible object storage provider ([MinIO](https://min.io) for local dev) → create a bucket | Store uploaded files |
-| 5 | **Storage access keys** | In your provider's console, create an access key + secret with put/get/head/delete on the bucket | App writes/reads/deletes objects |
-| 6 | **CDN distribution** | A CDN in front of the bucket → note the public base URL | Serve files from the edge |
-| 7 | **SMTP provider** | e.g. SendGrid, Amazon SES, Mailgun, Postmark → host, port, username, password | Transactional, magic-link & digest emails (via Nodemailer) |
-| 8 | **GeoIP source** *(optional)* | [MaxMind GeoLite2](https://www.maxmind.com) license key, or skip | Approximate device location in the session list ([authentication.md](Features/authentication.md) §7) — best-effort; the feature degrades gracefully without it |
+| 3 | **S3-compatible storage bucket** | Any S3-compatible object storage provider ([MinIO](https://min.io) for local dev) → create a bucket | Store uploaded files |
+| 4 | **Storage access keys** | In your provider's console, create an access key + secret with put/get/head/delete on the bucket | App writes/reads/deletes objects |
+| 5 | **CDN distribution** | A CDN in front of the bucket → note the public base URL | Serve files from the edge |
+| 6 | **SMTP provider** | e.g. SendGrid, Amazon SES, Mailgun, Postmark → host, port, username, password | Magic-link sign-in & digest emails (via Nodemailer) |
+| 7 | **GeoIP source** *(optional)* | [MaxMind GeoLite2](https://www.maxmind.com) license key, or skip | Approximate device location in the session list ([authentication.md](Features/authentication.md) §2) — best-effort; the feature degrades gracefully without it |
 
-> **Tip:** Items 4–6 (storage bucket + access keys + CDN) all come from one S3-compatible storage provider — the bucket, an access key/secret pair, and the public base URL of a CDN in front of it. For local dev you can run [MinIO](https://min.io) and skip the CDN entirely. Item 7 is any SMTP-capable mail provider.
+> **Tip:** Items 3–5 (storage bucket + access keys + CDN) all come from one S3-compatible storage provider — the bucket, an access key/secret pair, and the public base URL of a CDN in front of it. For local dev you can run [MinIO](https://min.io) and skip the CDN entirely. Item 6 is any SMTP-capable mail provider.
 >
 > **Local email tip:** You don't need a real SMTP provider to develop. Point the SMTP variables at a local catcher like [Mailpit](https://mailpit.axllent.org) or an [Ethereal](https://ethereal.email) test inbox to see verification, reset, invite, and digest emails without sending anything externally.
 
@@ -60,14 +59,13 @@ Set these up first — development is blocked without them. Each maps to one or 
 ### ⭐ What to request from your admin : 
 
 > [!IMPORTANT]
-> **These 4 are the only credentials that must come from outside** — request them from whoever owns the project's cloud accounts. Everything else you set up yourself locally.
+> **These 3 are the only credentials that must come from outside** — request them from whoever owns the project's cloud accounts. Everything else you set up yourself locally.
 >
 > | ✅ Request | Env var(s) | Notes |
 > |-----------|-----------|-------|
-> | **🔑 Google OAuth** — client ID + secret | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | For "Sign in with Google" |
 > | **🗄️ S3-compatible storage** — endpoint, region, bucket, access key + secret | `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Any S3-compatible provider — admin's choice |
 > | **🌐 CDN URL** — public base URL in front of the bucket | `CDN_URL` | Comes with the storage provider |
-> | **✉️ SMTP** — host, port, username, password | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` | Powers verification, reset, **and magic-link** emails |
+> | **✉️ SMTP** — host, port, username, password | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` | Powers the **magic-link sign-in** and digest emails |
 
 > [!TIP]
 > **Handle yourself — no need to ask:** PostgreSQL (run locally → `DATABASE_URL`) · Better Auth secret (`openssl rand -base64 32` → `BETTER_AUTH_SECRET`) · storage & email for local dev ([MinIO](https://min.io) + [Mailpit](https://mailpit.axllent.org)) · the optional MaxMind key.
@@ -86,9 +84,7 @@ DATABASE_URL=postgresql://user:password@localhost:5432/notelian
 
 # --- Auth (Better Auth) ---
 BETTER_AUTH_SECRET=<openssl rand -base64 32>
-BETTER_AUTH_URL=http://localhost:3000      # base URL Better Auth signs callbacks against
-GOOGLE_CLIENT_ID=<from Google Cloud Console>
-GOOGLE_CLIENT_SECRET=<from Google Cloud Console>
+BETTER_AUTH_URL=http://localhost:3000      # base URL Better Auth builds magic-link URLs against
 
 # --- File Storage (S3-compatible) ---
 S3_ENDPOINT=                            # leave blank for the region's default S3 endpoint; set a full URL for a custom S3-compatible endpoint
@@ -117,8 +113,7 @@ MAXMIND_LICENSE_KEY=<optional — session-list geolocation>
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string |
 | `BETTER_AUTH_SECRET` | Secret for Better Auth session signing |
-| `BETTER_AUTH_URL` | Base URL Better Auth uses to build OAuth callbacks (matches `NEXT_PUBLIC_APP_URL`) |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth |
+| `BETTER_AUTH_URL` | Base URL Better Auth uses to build magic-link URLs (matches `NEXT_PUBLIC_APP_URL`) |
 | `S3_ENDPOINT` | S3-compatible endpoint — leave blank for the region default, or set a custom endpoint URL |
 | `S3_BUCKET` / `S3_REGION` | Storage bucket + region |
 | `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | Storage programmatic credentials |
@@ -138,7 +133,7 @@ MAXMIND_LICENSE_KEY=<optional — session-list geolocation>
 | Language | **TypeScript** | Strict mode |
 | Database | **PostgreSQL** v16+ | Data store + full-text search + job queue |
 | ORM | **Drizzle ORM** | Type-safe, schema-as-code, explicit migrations |
-| Auth | **Better Auth** + Admin Plugin | Sessions, magic link, OAuth, ban/impersonate |
+| Auth | **Better Auth** + Magic Link Plugin + Admin Plugin | Database-backed sessions, passwordless magic-link sign-in, ban/impersonate |
 | Editor | **TipTap** (ProseMirror) | Block-based rich text |
 | Job Queue | **pg-boss** | Notifications, email digests, cleanup (runs in a worker — see §8) |
 | Real-time | **Server-Sent Events (SSE)** | In-app notification push — native, no extra library |
@@ -162,16 +157,13 @@ MAXMIND_LICENSE_KEY=<optional — session-list geolocation>
 
 ## 5. Complete Feature Inventory (everything included in the MVP)
 
-### 5.1 Authentication — *Better Auth + Admin Plugin*
-- Email + Password sign up / sign in / sign out
-- Magic link (passwordless email sign in, token valid **15 minutes**, single-use)
-- Google OAuth login
-- **No rate limit on sign in** (failed attempts are not throttled)
-- Forgot / reset password (token valid **1 hour**, single-use, revokes all sessions)
-- Email verification (token valid **24 hours**, single-use)
+### 5.1 Authentication — *Better Auth + Magic Link Plugin + Admin Plugin*
+- **Passwordless only** — magic link is the sole sign-in / sign-up method (no passwords, no OAuth / social)
+- Magic link sign in / sign up (token valid **15 minutes**, single-use)
+- A successful magic-link sign-in marks the email verified — clicking the link proves ownership, so there is no separate verification step
+- Sign out
 - Database-backed sessions; multi-device session list + revocation
 - Admin plugin: ban/unban users, impersonate users
-- Account linking (same email across email-auth and Google)
 
 ### 5.2 Workspace
 - Create / edit / delete workspace; switch between multiple
@@ -349,7 +341,7 @@ Admin:          platform_audit_log
 ```
 notelian/
 ├── app/                        # Next.js App Router
-│   ├── (auth)/                 # Sign up, sign in, forgot password
+│   ├── (auth)/                 # Sign in / sign up (magic link), magic-link verify
 │   ├── (app)/[workspace]/      # Main workspace UI
 │   │   ├── [pageId]/           # Page editor
 │   │   └── settings/           # Workspace settings
@@ -419,9 +411,8 @@ pnpm worker               # pg-boss — notifications, email digests, cleanup jo
 **First-run checklist:**
 - [ ] PostgreSQL v16+ running and reachable via `DATABASE_URL`
 - [ ] `BETTER_AUTH_SECRET` generated + `BETTER_AUTH_URL` set
-- [ ] Google OAuth client created with localhost redirect URI
 - [ ] Storage bucket + access keys + CDN URL ready (or MinIO running locally)
-- [ ] SMTP provider (or local Mailpit) credentials in `.env.local`
+- [ ] SMTP provider (or local Mailpit) credentials in `.env.local` — required so magic-link sign-in emails send
 - [ ] Migrations generated + applied (`db:generate` → `db:migrate`)
 - [ ] Worker running (`pnpm worker`) so jobs process
 - [ ] (To test Orbit) your user set to `is_platform_admin = true`
@@ -463,8 +454,8 @@ Fixed limits to enforce in code, collected from across the feature specs:
 | Stacked sort rules per view | 5 | Databases |
 | Recently visited | 10 recent (Favorites are uncapped) | Navigation |
 | Undo history | 200 steps (per session) | Editor |
-| Login attempts | **No limit** (sign-in not rate-limited) | Auth |
-| Verification resends | **No limit** (not rate-limited) | Auth |
+| Magic-link requests | **No limit** (sign-in requests not rate-limited) | Auth |
+| Magic-link token validity | 15 minutes, single-use | Auth |
 
 ---
 
@@ -473,7 +464,7 @@ Fixed limits to enforce in code, collected from across the feature specs:
 A pragmatic dependency-ordered path through the MVP:
 
 1. **Foundation** — Next.js + TypeScript + Tailwind + Drizzle + PostgreSQL connection + **pg-boss worker harness** (stub the worker process early so jobs have a home)
-2. **Auth** — Better Auth (email + Google), sessions, email verification
+2. **Auth** — Better Auth passwordless magic link, database-backed sessions
 3. **Workspace + members + roles** — the container everything hangs off
 4. **Navigation + Pages** — sidebar tree, page CRUD, icons/covers; **export (Markdown/HTML, then PDF via Puppeteer)** + version history
 5. **Editor** — TipTap, all block types, slash command, auto-save + IndexedDB offline queue

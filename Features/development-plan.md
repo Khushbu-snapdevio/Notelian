@@ -14,7 +14,7 @@ This document covers Notelian's technical architecture, development phases, and 
 | Language | TypeScript | Strict mode enabled |
 | Database | PostgreSQL | v16+ — primary store, full-text search, job queue |
 | ORM | Drizzle ORM | Type-safe queries, migrations, schema-as-code |
-| Auth | Better Auth + Admin Plugin | Database-backed sessions, magic link, OAuth, impersonation |
+| Auth | Better Auth + Magic Link Plugin + Admin Plugin | Database-backed sessions, passwordless magic-link sign-in, ban/impersonate |
 | Editor | TipTap | ProseMirror-based, extensible block editor |
 | Job Queue | pg-boss | PostgreSQL-backed — notifications, email, cleanup |
 | File Storage | S3-compatible object storage | Page covers, media blocks, file attachments |
@@ -32,7 +32,7 @@ This document covers Notelian's technical architecture, development phases, and 
 ```
 notelian/
 ├── app/                        # Next.js App Router pages
-│   ├── (auth)/                 # Sign up, sign in, forgot password
+│   ├── (auth)/                 # Sign in / sign up (magic link), magic-link verify
 │   ├── (app)/[workspace]/      # Main workspace UI
 │   │   ├── [pageId]/           # Page editor
 │   │   └── settings/           # Workspace settings
@@ -62,7 +62,7 @@ notelian/
 **Goal:** Core workspace, writing, and collaboration features.
 
 **Scope:**
-- Authentication (Email + Password, magic link, Google OAuth — Better Auth)
+- Authentication (passwordless magic link — Better Auth), database-backed sessions
 - Workspace creation, members, and roles
 - Onboarding wizard, tooltip tour, contextual hints
 - Sidebar navigation with page tree and drag-and-drop
@@ -236,9 +236,7 @@ Admin:
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string |
 | `BETTER_AUTH_SECRET` | Secret for Better Auth session signing |
-| `BETTER_AUTH_URL` | Base URL Better Auth uses to build OAuth callbacks (matches `NEXT_PUBLIC_APP_URL`) |
-| `GOOGLE_CLIENT_ID` | Google OAuth client ID |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
+| `BETTER_AUTH_URL` | Base URL Better Auth uses to build magic-link URLs (matches `NEXT_PUBLIC_APP_URL`) |
 | `S3_ENDPOINT` | S3-compatible storage endpoint (leave blank for the region default; set a custom endpoint URL otherwise) |
 | `S3_BUCKET` | Storage bucket name |
 | `S3_REGION` | Bucket region (e.g. `us-east-1`, or `auto` for some providers) |

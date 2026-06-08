@@ -1,14 +1,21 @@
-# Notelian — All-in-One Workspace (Notion-style)
+# Notelian — Structured Workspace for Small Teams
 
 ## Product Vision
 
-Build a modern all-in-one workspace where individuals and teams can write, plan, and collaborate — combining notes, documents, databases, and project management in one place.
+Notelian is an opinionated, pre-structured workspace for **small teams (3–15 people) who tried Notion, found it overwhelming to set up, and just want to get working.** Instead of a blank canvas with infinite options, Notelian ships with the structure those teams actually need — a fast note editor, a shared wiki, a Kanban board, and good search — ready to use on day one.
+
+**Who it's for:**
+- A 3–15 person startup that needs a structured team wiki + lightweight project tracking
+- Teams who want Notion's core value without its setup overhead or power-user complexity
+- *Not* power users chasing formulas, rollups, or API-driven automation — those are deliberately out of scope
+
+**Positioning (honest):** Notelian is not "Notion but faster." It is **Notion's core, pre-assembled** — a smaller, opinionated surface that trades configurability for time-to-value. The bet is on *fewer decisions*, not on out-engineering a 30M-user incumbent on speed.
 
 **Goals:**
 - Everything is a block — flexible, composable content
 - Fast, distraction-free writing experience
 - Powerful databases that feel like documents
-- Native collaboration without switching tools
+- Opinionated defaults so a team is productive in minutes, not hours
 
 ---
 
@@ -51,19 +58,17 @@ Workspace
 
 User identity and session management.
 
-**Powered by:** Better Auth with Admin Plugin
+**Powered by:** Better Auth with Magic Link Plugin + Admin Plugin
 
 **Features:**
-- Sign up (Email + Password)
-- Sign in / Sign out
-- Magic link (passwordless email sign in)
-- OAuth login (Google)
-- Forgot password / Reset password
-- Email verification
+- Passwordless sign in / sign up via magic link (the only auth method — no passwords, no OAuth/social)
+- Sign out
 - Database-backed session management
 - Multi-device session list and revocation
 - Ban / unban users (via Admin Plugin)
 - Impersonate users (via Admin Plugin)
+
+> **Note:** Reconciled with [Features/authentication.md](Features/authentication.md), which defines auth as passwordless magic-link only. The product audit assumed email/password + Google OAuth — that assumption is now stale; the magic-link model supersedes it.
 
 ---
 
@@ -75,7 +80,7 @@ Top-level organizational container. Every user belongs to at least one workspace
 
 **Features:**
 - Create, edit, delete workspace
-- Switch between multiple workspaces
+- Switch between multiple workspaces (workspace switcher)
 - Invite members via email or invite link
 - Manage members and roles
 - Transfer ownership
@@ -107,10 +112,10 @@ Guided setup for new users.
 Sidebar and workspace navigation.
 
 **Features:**
+- Workspace switcher (multiple workspaces per account)
 - Collapsible sidebar with resizable width
 - Hierarchical page tree with drag-and-drop reordering
 - Favorites section (personal per-user)
-- Workspace switcher (top of sidebar)
 - Recently visited pages (last 10)
 - Trash (30-day retention)
 - Sidebar filter (filter visible pages by name)
@@ -144,7 +149,7 @@ Block-based rich text editor. Every element is a block.
 | Text | Paragraph, H1, H2, H3, Bulleted List, Numbered List, Toggle, Quote, Callout, Divider |
 | Task | To-Do (checkbox) |
 | Media | Image, Video, Audio, File |
-| Structure | Table of Contents, Simple Table, Columns |
+| Structure | Table of Contents, Simple Table, Columns (2–3 column layout) |
 | Code & Math | Code Block (syntax highlighting), Equation (LaTeX) |
 | Reference | Linked Page, Inline Database |
 
@@ -181,7 +186,7 @@ Structured data collections where each entry is a full page.
 |------|-------------|
 | Table | Spreadsheet-style rows and columns |
 | Board | Kanban columns grouped by a Select property |
-| Calendar | Entries placed on a calendar by date property |
+| Calendar | Entries placed on a month grid by a Date property |
 | Gallery | Visual card grid with cover images |
 
 **Features:**
@@ -209,9 +214,11 @@ Typed columns that define database structure.
 | Email | Clickable mailto link |
 | Phone | Clickable tel link |
 | Person | Workspace members (supports `@me` as dynamic default) |
-| Relation | Bidirectional link to entries in another database |
+| Relation | Bidirectional link to entries in another database (auto-created back-relation) |
 
 **System Properties (auto-generated):** Created Time, Last Edited Time, Created By, Last Edited By
+
+> **Limit:** 50 user-created properties per database.
 
 ---
 
@@ -236,7 +243,7 @@ In-context collaboration on pages and blocks.
 
 **Comments:**
 - Block comments — attached to any block, threaded (one level deep)
-- Text-level comments — anchored to a selected text range
+- Text-level comments — anchored to a selected text range within a block
 - Page-level comments — general feedback at the bottom of the page
 - Resolve and reopen threads
 
@@ -260,7 +267,7 @@ Two-layer access control: workspace roles + page-level permissions.
 | Can Comment | Read and leave comments |
 | Can View | Read only |
 
-**Sharing:** Public link (no login required), guest invite by email, subpage permission inheritance with per-page override.
+**Sharing:** Public link (no login required), guest access (invite external users to specific pages by email), subpage permission inheritance with per-page override.
 
 ---
 
@@ -311,18 +318,18 @@ Binary uploads stored in S3-compatible object storage and served via a CDN. Cove
 
 ### Included in MVP
 
-- [x] Authentication (Email + Password, magic link, Google OAuth)
-- [x] Workspace (create, invite, roles)
+- [x] Authentication (passwordless magic link) + session management
+- [x] Workspaces (multiple per account, switcher, create, invite, roles)
 - [x] Onboarding (wizard, tour, hints)
 - [x] Sidebar navigation with page tree
 - [x] Pages (unlimited hierarchy, icon, cover, export)
-- [x] Block-based editor (all block types)
+- [x] Block-based editor (all block types, including Columns)
 - [x] Templates (built-in + custom)
-- [x] Databases (Table, Board, Calendar, and Gallery views)
-- [x] Database Properties (all 11 types + system properties)
+- [x] Databases (Table, Board, Calendar, Gallery views)
+- [x] Database Properties (all types, including Relation + system properties)
 - [x] Global Search (PostgreSQL FTS)
-- [x] Comments & Mentions
-- [x] Permissions & Sharing (roles, page permissions, public links, guests)
+- [x] Comments & Mentions (block, text-level, and page-level)
+- [x] Permissions & Sharing (roles, page permissions, public links, guest access)
 - [x] In-app and Email Notifications
 - [x] Orbit Admin (user + workspace + template management)
 - [x] File Storage (S3-compatible object storage + CDN, pre-signed direct uploads)
@@ -351,7 +358,7 @@ Binary uploads stored in S3-compatible object storage and served via a CDN. Cove
 | Backend | Next.js API Routes / Server Actions | API layer |
 | Database | PostgreSQL | Primary data store + full-text search |
 | ORM | Drizzle ORM | Type-safe database access |
-| Auth | Better Auth + Admin Plugin | Sessions, magic link, OAuth, user management |
+| Auth | Better Auth + Magic Link Plugin + Admin Plugin | Database-backed sessions, passwordless magic-link sign-in, user management |
 | Editor | TipTap (ProseMirror-based) | Block-based rich text editor |
 | Job Queue | pg-boss | Notifications, email digests, cleanup jobs |
 | File Storage | S3-compatible object storage + CDN | Images, covers, file attachments |
@@ -360,4 +367,30 @@ Binary uploads stored in S3-compatible object storage and served via a CDN. Cove
 
 ---
 
-*Last updated: 2026-06-04*
+## 18. Phase-1 Architecture Decisions
+
+Decisions that are **hard or impossible to change after data exists** — they must be settled before any pages, blocks, or permissions are persisted.
+
+| # | Decision | Commitment for MVP | Why it can't wait |
+|---|----------|--------------------|-------------------|
+| 1 | **Page hierarchy storage** | **Closure table** (not a plain adjacency list) | "Get all descendant pages" is needed for permissions, search scoping, and bulk ops. Adjacency lists make this slow and are extremely hard to migrate once pages exist. |
+| 2 | **Block content storage** | **JSONB with an explicit `schema_version` field from day one** | Adding or reshaping block types later requires migrating existing block JSON. Without versioning, block shapes become unmaintainable. |
+| 3 | **Permission resolution** | **Single recursive CTE** that walks parents to the first explicit permission or workspace root | Computing effective permissions in application code is an N+1 query trap. Must be one query, designed up front. |
+| 4 | **Search index maintenance** | **PostgreSQL triggers that fire on block-content changes, not just page-title changes** | Block content lives separately from the title; a title-only trigger silently produces stale search results. Test triggers under bulk ops (import, mass delete). |
+| 5 | **Permission filtering location** | **Enforced at the SQL query level**, never in application code after fetch | App-level filtering after a broad query is a BOLA vulnerability — restricted rows leave the database before they're filtered. |
+| 6 | **Real-time delivery (SSE)** | **Long-lived Node.js server (PM2 / Docker)**, not Vercel serverless | Serverless function timeouts kill long-lived SSE connections. The deploy target is a prerequisite for choosing SSE. |
+
+---
+
+## 19. Accessibility (MVP baseline)
+
+Accessibility is not addressed in the original specs and is cheapest to build in from the start. Minimum bar for Phase 1:
+
+- **Keyboard accessibility** for all interactive elements (Tab, Enter, Escape); logical Tab order in complex views (database Table, comment panel)
+- **ARIA labels** on the sidebar tree, database cells, and comment panels
+- **Color is never the only indicator** — badges, callouts, and highlights pair color with an icon or text
+- **WCAG AA contrast** (4.5:1 for text) enforced in the color palette
+
+---
+
+*Last updated: 2026-06-08*

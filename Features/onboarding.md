@@ -22,7 +22,7 @@ A 4-screen guided flow shown to every new user on first login (guests invited on
 
 ### Screen 1 — Profile Setup
 
-- **Display Name** (required) — pre-filled from Google name if OAuth
+- **Display Name** (required) — blank by default (no name is collected at magic-link sign-up)
 - **Avatar** (optional) — upload image or use auto-generated initials avatar
 - **Role / Title** (optional) — e.g. "Product Designer", "Founder"
 
@@ -53,7 +53,7 @@ CTA: `"Create Workspace"` or `"Join Workspace"`
 - "Add another" to add more rows
 - Skip link: `"I'll do this later →"`
 
-Invites are sent immediately if the inviting user's email is already verified (e.g. Google sign-up). For an unverified email+password user, the invites are **queued** at this step and sent automatically once they verify their email — a note is shown: `"Invites will be sent once you verify your email."` Pending and queued invites are both visible in Workspace Settings → Members.
+Invites are sent immediately. Because users sign in via magic link, the inviting user's email is already verified at this point — there is no unverified-account state to gate invites behind. Pending invites are visible in Workspace Settings → Members.
 
 CTA: `"Send Invites & Continue"` or skip
 
