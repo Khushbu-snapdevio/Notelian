@@ -26,7 +26,7 @@ Controls what a user can do at the workspace level.
 | Editor | Standard member. Can create pages and edit content. Subject to page-level restrictions. |
 | Viewer | Read-only. Can view pages they have been explicitly granted access to. |
 
-**Key rule:** Workspace roles are the **floor** of capability. Page-level permissions can further restrict — but never expand — what a member can do on a specific page.
+**Key rule:** Workspace roles are the **ceiling** of capability. Page-level permissions can further restrict — but never expand — what a member can do on a specific page. For example, a **Viewer** can only ever be granted **Can View** on a page; they can never be given Can Comment, Can Edit, or Full Access. An **Editor** can be granted any page-level permission up to **Full Access**.
 
 ---
 
@@ -91,7 +91,7 @@ Any page can be set to **Private** — visible only to its creator and explicitl
 - Private pages do **not appear** in the sidebar for other members (including Admins)
 - Private pages are **not returned** in workspace-wide search results — **including for Admins** (intentional privacy guarantee)
 - A lock icon (🔒) appears next to private pages in the sidebar for their owner
-- Workspace Admins can view a list of private page **titles only** (not content) in Orbit Admin for compliance purposes
+- The Notelian platform team (Platform Admins) can view a list of private page **titles only** (not content) via **Orbit Admin** for compliance purposes — this is **not** available to workspace Admins
 
 ---
 
@@ -173,6 +173,7 @@ The invitation link expires in **7 days**. If not accepted, the inviting user mu
 - Cannot create new pages in the workspace
 - Appear in @mention suggestions only on pages they have access to
 - Listed separately from full members in Workspace Settings → Members
+- Are **not** required to create or join a workspace — accepting a page invite takes them straight to the shared page, bypassing the onboarding wizard (see [onboarding.md](onboarding.md) business rule 4)
 
 ### Revoking guest access
 
@@ -259,7 +260,7 @@ GuestInvitation
 
 ## Business Rules
 
-1. Workspace roles are the floor of permissions — page-level permissions can restrict but never expand a member's workspace role.
+1. Workspace roles are the **ceiling** of permissions — page-level permissions can restrict but never expand a member's workspace role. (A Viewer is read-only on every page; an Editor can be granted up to Full Access.)
 2. A workspace Admin has implicit access to all non-private pages, regardless of page-level settings.
 3. Private pages are completely hidden from all other users — Admins cannot discover private page content through any in-product UI.
 4. Subpages inherit the parent's permissions by default unless the subpage has custom permissions explicitly set.

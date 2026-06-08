@@ -306,7 +306,7 @@ To-Do:      { "checked": false, "text": [...] }
 7. Markdown shortcuts only trigger at the start of an empty block — they do not activate mid-sentence.
 8. The slash command menu dismisses automatically if the user clicks outside or presses Escape.
 9. All block types behave identically whether the block is on a page or inside a database entry.
-10. File blocks (Image, Video, Audio, File) delete the stored file from the server when the block is deleted.
+10. Deleting a file block (Image, Video, Audio, File) does **not** immediately remove the stored file — undo (`Ctrl+Z`) and Version History must still be able to restore the block with its media intact. The stored file is removed later by a cleanup job, once no active block references it and it has aged out of the 7-day Version History window.
 
 ---
 

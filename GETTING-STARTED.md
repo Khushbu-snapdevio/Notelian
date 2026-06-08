@@ -46,13 +46,13 @@ Set these up first — development is blocked without them. Each maps to one or 
 | 1 | **PostgreSQL database** | Local install, or managed: Supabase / Neon / Railway | App data, search, job queue |
 | 2 | **Better Auth secret** | Generate yourself: `openssl rand -base64 32` | Signing sessions |
 | 3 | **Google OAuth credentials** | [Google Cloud Console](https://console.cloud.google.com) → APIs & Services → Credentials → OAuth client ID (Web). Add redirect URI `http://localhost:3000/api/auth/callback/google` | "Sign in with Google" |
-| 4 | **S3-compatible storage bucket** | Any S3-compatible provider — AWS S3, Cloudflare R2, MinIO (local), Backblaze B2 → create a bucket | Store uploaded files |
+| 4 | **S3-compatible storage bucket** | Any S3-compatible object storage provider ([MinIO](https://min.io) for local dev) → create a bucket | Store uploaded files |
 | 5 | **Storage access keys** | In your provider's console, create an access key + secret with put/get/head/delete on the bucket | App writes/reads/deletes objects |
-| 6 | **CDN distribution** | A CDN in front of the bucket (CloudFront, Cloudflare, or the provider's built-in CDN) → note the public base URL | Serve files from the edge |
+| 6 | **CDN distribution** | A CDN in front of the bucket → note the public base URL | Serve files from the edge |
 | 7 | **SMTP provider** | e.g. SendGrid, Amazon SES, Mailgun, Postmark → host, port, username, password | Transactional, magic-link & digest emails (via Nodemailer) |
 | 8 | **GeoIP source** *(optional)* | [MaxMind GeoLite2](https://www.maxmind.com) license key, or skip | Approximate device location in the session list ([authentication.md](Features/authentication.md) §7) — best-effort; the feature degrades gracefully without it |
 
-> **Tip:** Items 4–6 (storage bucket + access keys + CDN) come from one storage provider — on AWS that's S3 + IAM + CloudFront, on Cloudflare it's R2 + an API token + the R2 public domain. For local dev you can run [MinIO](https://min.io) and skip the CDN entirely. Item 7 is any SMTP-capable mail provider.
+> **Tip:** Items 4–6 (storage bucket + access keys + CDN) all come from one S3-compatible storage provider — the bucket, an access key/secret pair, and the public base URL of a CDN in front of it. For local dev you can run [MinIO](https://min.io) and skip the CDN entirely. Item 7 is any SMTP-capable mail provider.
 >
 > **Local email tip:** You don't need a real SMTP provider to develop. Point the SMTP variables at a local catcher like [Mailpit](https://mailpit.axllent.org) or an [Ethereal](https://ethereal.email) test inbox to see verification, reset, invite, and digest emails without sending anything externally.
 
@@ -65,7 +65,7 @@ Set these up first — development is blocked without them. Each maps to one or 
 > | ✅ Request | Env var(s) | Notes |
 > |-----------|-----------|-------|
 > | **🔑 Google OAuth** — client ID + secret | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | For "Sign in with Google" |
-> | **🗄️ S3-compatible storage** — endpoint, region, bucket, access key + secret | `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Any provider (AWS S3 / R2 / B2) — admin's choice |
+> | **🗄️ S3-compatible storage** — endpoint, region, bucket, access key + secret | `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Any S3-compatible provider — admin's choice |
 > | **🌐 CDN URL** — public base URL in front of the bucket | `CDN_URL` | Comes with the storage provider |
 > | **✉️ SMTP** — host, port, username, password | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` | Powers verification, reset, **and magic-link** emails |
 
@@ -91,9 +91,9 @@ GOOGLE_CLIENT_ID=<from Google Cloud Console>
 GOOGLE_CLIENT_SECRET=<from Google Cloud Console>
 
 # --- File Storage (S3-compatible) ---
-S3_ENDPOINT=                            # blank for AWS S3; set for R2/MinIO/B2 (e.g. https://<acct>.r2.cloudflarestorage.com)
+S3_ENDPOINT=                            # leave blank for the region's default S3 endpoint; set a full URL for a custom S3-compatible endpoint
 S3_BUCKET=notelian-uploads
-S3_REGION=us-east-1                      # use `auto` for some providers (e.g. R2)
+S3_REGION=us-east-1                      # use `auto` if your S3-compatible provider requires it
 S3_ACCESS_KEY_ID=<access key id>
 S3_SECRET_ACCESS_KEY=<secret access key>
 CDN_URL=https://cdn.notelian.app        # CDN base URL in front of the bucket
@@ -119,7 +119,7 @@ MAXMIND_LICENSE_KEY=<optional — session-list geolocation>
 | `BETTER_AUTH_SECRET` | Secret for Better Auth session signing |
 | `BETTER_AUTH_URL` | Base URL Better Auth uses to build OAuth callbacks (matches `NEXT_PUBLIC_APP_URL`) |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth |
-| `S3_ENDPOINT` | S3-compatible endpoint — blank for AWS S3, set for R2 / MinIO / B2 |
+| `S3_ENDPOINT` | S3-compatible endpoint — leave blank for the region default, or set a custom endpoint URL |
 | `S3_BUCKET` / `S3_REGION` | Storage bucket + region |
 | `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | Storage programmatic credentials |
 | `CDN_URL` | CDN base URL used to build public file URLs |
@@ -211,7 +211,7 @@ MAXMIND_LICENSE_KEY=<optional — session-list geolocation>
 
 **Editor features:** `/` slash command · floating inline-format toolbar (bold, italic, code, link, comment, color) · Markdown shortcuts · block drag-and-drop · multi-block selection · continuous auto-save with offline queue · 200-step undo history.
 
-### 5.7 Templates0
+### 5.7 Templates
 - **Built-in** library by category: Personal, Productivity, Project Management, Team & Knowledge, Personal CRM
 - **Custom** — save any page as a workspace-scoped template
 - **Template Button block** — clones a predefined block structure on click
@@ -273,11 +273,11 @@ MAXMIND_LICENSE_KEY=<optional — session-list geolocation>
 | Can Comment | Read, comment |
 | Can View | Read only |
 
-- Workspace role is the **floor**; page permissions restrict but never expand it
+- Workspace role is the **ceiling**; page permissions restrict but never expand it (a Viewer is read-only on every page)
 - Public link (no login) · guest invite by email · subpage inheritance with per-page override
 
 ### 5.13 Notifications
-- **In-app:** bell + unread badge; real-time via **Server-Sent Events (SSE)**; toast auto-dismisses 5s. Triggers: @mentions, comment replies, thread resolutions, page access granted, workspace invites
+- **In-app:** bell + unread badge; real-time via **Server-Sent Events (SSE)**; toast auto-dismisses 5s. Triggers: @mentions, comment replies, thread resolutions, page access granted, workspace invites, trash auto-deletion warnings
 - **Email:** Real-time / Daily digest (default) / Weekly digest / Off; timezone-aware
 - **Retention:** 90 days · powered by **pg-boss**
 
@@ -316,10 +316,19 @@ MAXMIND_LICENSE_KEY=<optional — session-list geolocation>
 Core:           users, sessions, accounts, verification_tokens
                 workspaces, workspace_members
                 pages (covers both pages AND database entries)
-                blocks (content stored as JSONB; search_vector column for FTS)
+                page_versions, blocks (content stored as JSONB)
 
 Database:       databases (extends pages), database_views,
                 database_properties, property_values
+
+Sharing:        page_permissions, public_links, guest_invitations
+
+Files:          file_uploads, workspace_storage_usage
+
+Search:         search_index (denormalized FTS rows for pages, entries,
+                comments; tsvector + GIN)
+
+Templates:      templates
 
 Collaboration:  comments, notifications, notification_preferences
 
@@ -329,7 +338,9 @@ User prefs:     user_preferences, user_hint_states,
 Admin:          platform_audit_log
 ```
 
-**Key decisions:** block content as JSONB (schema-less per block type) · search via a `search_vector` column kept current by triggers · PostgreSQL for both search and the job queue to avoid extra infra.
+> This overview lists the main tables by area; some columns and helper tables are defined in the per-feature specs under [Features/](Features/).
+
+**Key decisions:** block content as JSONB (schema-less per block type) · search via a dedicated `search_index` table (`search_vector` + GIN) kept current on save · PostgreSQL for both search and the job queue to avoid extra infra.
 
 ---
 
@@ -424,14 +435,15 @@ All async/scheduled work runs through pg-boss in the **worker** process (§8). C
 | Job | Schedule / Trigger | Source feature |
 |-----|--------------------|----------------|
 | `cleanup-stale-uploads` | Every 30 min | File Storage — delete storage objects for uploads never confirmed |
+| `cleanup-orphaned-media` | Daily | File Storage — delete stored files no longer referenced by any active block or by a page version within the 7-day window (preserves undo / Version History) |
 | `sync-storage-usage` | Daily | File Storage — reconcile `bytes_used` against actual storage objects |
 | `delete-user-private-pages` | On account-deletion confirm | Auth — purge private pages + their files for a deleted user |
 | `auto-delete-expired-trash` | Daily 02:00 UTC | Pages — permanently remove trashed pages past retention (cascades to subpages + files) |
-| `warn-expiring-trash` | Daily 02:00 UTC | Pages — flag pages ≤7 days from auto-deletion for the warning banner |
+| `warn-expiring-trash` | Daily 02:00 UTC | Pages — flag pages ≤7 days from auto-deletion for the warning banner; at 3 days send a one-time in-app + email warning to the page's deleter and creator |
 | `auto-delete-expired-versions` | Daily | Pages — prune page versions outside the retention window |
-| Email digests | Daily 08:00 (user TZ) / weekly | Notifications — send daily/weekly digest of unread items |
-| Notification cleanup | Nightly | Notifications — permanently delete notifications older than 90 days |
-| Real-time / digest email send | On event / scheduled | Notifications — retries up to 3× with exponential backoff |
+| `send-email-digest` | Daily 08:00 (user TZ) / weekly | Notifications — send daily/weekly digest of unread items |
+| `cleanup-old-notifications` | Nightly | Notifications — permanently delete notifications older than 90 days |
+| `send-notification-email` | On event / scheduled | Notifications — deliver per-event emails; retries up to 3× with exponential backoff |
 
 > Job definitions live in `lib/jobs/` (notification triggers in `lib/notifications/`) and must be registered on worker boot. There is no separate broker — the queue tables live in the same PostgreSQL database.
 
@@ -449,7 +461,7 @@ Fixed limits to enforce in code, collected from across the feature specs:
 | Workspace storage quota | **TBD — decide before building enforcement** | File Storage |
 | Properties per database | 50 | Database Properties |
 | Stacked sort rules per view | 5 | Databases |
-| Recently visited / Favorites | 10 recent | Navigation |
+| Recently visited | 10 recent (Favorites are uncapped) | Navigation |
 | Undo history | 200 steps (per session) | Editor |
 | Login attempts | **No limit** (sign-in not rate-limited) | Auth |
 | Verification resends | **No limit** (not rate-limited) | Auth |
@@ -486,6 +498,8 @@ A pragmatic dependency-ordered path through the MVP:
 | E2E | Playwright | Sign up, create page, invite member |
 
 **Production:** Next.js on Vercel/Railway · managed PostgreSQL (Supabase/Neon/Railway) · S3-compatible object storage + CDN · Nodemailer SMTP. CI/CD: push to `main` → tests → deploy; feature branch → tests → preview.
+
+> **SSE hosting note:** The notification SSE stream (`/api/notifications/stream`) needs a persistent-connection host (Railway / long-lived Node server) — Vercel serverless functions cap stream duration and drop the connection. The client auto-reconnects via `EventSource` and falls back to polling, so notifications still work on Vercel, just without a steady live stream. See [notifications.md](Features/notifications.md).
 
 ---
 

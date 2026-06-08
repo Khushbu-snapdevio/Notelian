@@ -266,7 +266,7 @@ Two-layer access control: workspace roles + page-level permissions.
 
 ## 13. Notifications
 
-**In-App:** Bell icon with unread badge. Triggers: @mentions, comment replies, thread resolutions, page access granted, workspace invites. Real-time delivery via **Server-Sent Events (SSE)**; toast auto-dismisses after 5s.
+**In-App:** Bell icon with unread badge. Triggers: @mentions, comment replies, thread resolutions, page access granted, workspace invites, trash auto-deletion warnings. Real-time delivery via **Server-Sent Events (SSE)**; toast auto-dismisses after 5s.
 
 **Email:** Real-time, Daily digest (default), Weekly digest, or Off. Timezone-aware delivery.
 
@@ -291,7 +291,7 @@ Two-layer access control: workspace roles + page-level permissions.
 
 Binary uploads stored in S3-compatible object storage and served via a CDN. Covers page cover images, page icons, and all media blocks (Image, Video, Audio, File).
 
-**Provider:** Any S3-compatible object storage (AWS S3, Cloudflare R2, MinIO, Backblaze B2, …)
+**Provider:** Any S3-compatible object storage
 
 **Upload flow:** Pre-signed PUT URLs — files upload directly to the storage bucket, never transiting the app server.
 

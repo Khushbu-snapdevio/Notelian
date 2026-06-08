@@ -185,13 +185,28 @@ Core tables:
   users, sessions, accounts, verification_tokens
   workspaces, workspace_members
   pages (covers both pages and database entries)
-  blocks
+  page_versions, blocks
 
 Database features:
   databases (extends pages)
   database_views
   database_properties
   property_values
+
+Sharing:
+  page_permissions
+  public_links
+  guest_invitations
+
+Files:
+  file_uploads
+  workspace_storage_usage
+
+Search:
+  search_index
+
+Templates:
+  templates
 
 Collaboration:
   comments
@@ -208,6 +223,8 @@ Admin:
   platform_audit_log
 ```
 
+> This lists the main tables by area; some columns and helper tables live in the per-feature specs.
+
 ---
 
 ## Environment Variables
@@ -218,7 +235,7 @@ Admin:
 | `BETTER_AUTH_SECRET` | Secret for Better Auth session signing |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
-| `S3_ENDPOINT` | S3-compatible storage endpoint (omit/blank for AWS S3; set for R2, MinIO, B2, etc.) |
+| `S3_ENDPOINT` | S3-compatible storage endpoint (leave blank for the region default; set a custom endpoint URL otherwise) |
 | `S3_BUCKET` | Storage bucket name |
 | `S3_REGION` | Bucket region (e.g. `us-east-1`, or `auto` for some providers) |
 | `S3_ACCESS_KEY_ID` | Storage access key ID |
@@ -272,6 +289,8 @@ pnpm run dev
 - PostgreSQL: Supabase / Neon / Railway managed PostgreSQL
 - File storage: S3-compatible object storage + CDN
 - Email: Nodemailer (SMTP)
+
+> **Real-time (SSE) hosting constraint:** The notification SSE stream (`GET /api/notifications/stream`) is a long-lived connection and must run on a host that supports persistent connections (**Railway** or a VM/long-lived Node server). Vercel serverless functions cap stream duration and will drop the connection, so either host that route on Railway or rely on the client's `EventSource` auto-reconnect + polling fallback (the Notification Center stays the durable source of truth). See [notifications.md](notifications.md).
 
 **CI/CD:**
 - Push to `main` → automated tests → deploy to production

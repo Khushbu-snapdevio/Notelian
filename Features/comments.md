@@ -189,7 +189,7 @@ Comment
 ├── anchor_end          (integer, nullable — character offset in block text)
 ├── is_resolved         (boolean, default: false)
 ├── is_orphaned         (boolean, default: false — text anchor was deleted)
-├── author_id           (foreign key → User)
+├── author_id           (foreign key → User, nullable — ON DELETE SET NULL; null = "Former Member")
 ├── content             (jsonb — inline text with marks and mentions)
 ├── created_at          (timestamp)
 ├── edited_at           (timestamp, nullable)
@@ -202,7 +202,7 @@ Comment
 
 | Method | Endpoint | Description | Access |
 |--------|----------|-------------|--------|
-| GET | `/api/pages/:id/comments` | List all comments for a page | Can Comment+ |
+| GET | `/api/pages/:id/comments` | List all comments for a page | Can View+ |
 | POST | `/api/pages/:id/comments` | Create a comment or reply | Can Comment+ |
 | PATCH | `/api/comments/:id` | Edit a comment | Author only |
 | DELETE | `/api/comments/:id` | Delete a comment | Author or Admin |

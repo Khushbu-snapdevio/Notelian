@@ -131,7 +131,7 @@ Every user who signs up with email + password must verify their email.
 ### Unverified Restrictions
 
 - Can access app and complete onboarding
-- Cannot invite members to workspace until verified
+- Cannot send member invites until verified — invites entered during the onboarding wizard are **queued** and sent automatically once the email is verified
 - Persistent banner shown until verified
 
 ### Resend

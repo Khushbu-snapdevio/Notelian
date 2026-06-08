@@ -79,8 +79,7 @@ When the user starts typing:
 **Not searched:**
 - File contents (PDFs, Word docs, images — only filename)
 - Private pages of other users (intentional — privacy boundary)
-- Deleted / Trashed pages
-- Archived database entries
+- Deleted / Trashed pages (including trashed database entries — every entry is a page)
 
 ---
 
@@ -231,7 +230,6 @@ UserRecentlyVisited
 5. Results are capped at 50 per query. A note is shown when the cap is reached ("Showing top 50 results — refine your search").
 6. The search index is updated synchronously on content changes — no manual reindex is needed.
 7. Recently visited list is personal, per-user, and per-workspace. Maximum 10 entries.
-8. Search is available to all plan levels — there are no plan-gated search capabilities in Phase 1.
 
 ---
 

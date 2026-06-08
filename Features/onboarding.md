@@ -18,7 +18,7 @@ Onboarding guides new users from account creation to their first meaningful acti
 
 ## Stage 1 — Setup Wizard
 
-A 4-screen guided flow shown to every new user on first login. Can be skipped at any screen (except screen 1 — profile is required).
+A 4-screen guided flow shown to every new user on first login (guests invited only to specific pages skip it — see business rule 4). Can be skipped at any screen (except screen 1 — profile is required).
 
 ### Screen 1 — Profile Setup
 
@@ -41,7 +41,7 @@ Two paths:
 
 **Join an existing workspace:**
 - Paste an invite link or enter a workspace invite code
-- User joins as an Editor (unless link specifies a different role)
+- User joins as an Editor (the default role for invite links)
 
 CTA: `"Create Workspace"` or `"Join Workspace"`
 
@@ -53,7 +53,7 @@ CTA: `"Create Workspace"` or `"Join Workspace"`
 - "Add another" to add more rows
 - Skip link: `"I'll do this later →"`
 
-Invites are sent immediately. Pending invites visible in Workspace Settings → Members.
+Invites are sent immediately if the inviting user's email is already verified (e.g. Google sign-up). For an unverified email+password user, the invites are **queued** at this step and sent automatically once they verify their email — a note is shown: `"Invites will be sent once you verify your email."` Pending and queued invites are both visible in Workspace Settings → Members.
 
 CTA: `"Send Invites & Continue"` or skip
 
@@ -195,7 +195,7 @@ UserHintState
 1. The onboarding wizard is shown only once — on the user's first login after sign up.
 2. Screen 1 (Profile Setup) cannot be skipped — a display name is required.
 3. Screens 2–4 can each be individually skipped.
-4. A workspace is required to access the product — a user with no workspace is always redirected to the wizard.
+4. A workspace is required to access the product — a user with no workspace membership is redirected to the wizard. **Exception:** a guest (a user who holds guest page permissions but is not a member of any workspace) bypasses the wizard entirely and is taken straight to the shared page they were invited to.
 5. Rejoining the same workspace via invite link after removal is not allowed without a new invite.
 6. Tooltip hints are per-user — completing the tour on one device marks it done on all devices.
 7. Contextual hints are never shown again after dismissal, even if the user clears their browser cache.

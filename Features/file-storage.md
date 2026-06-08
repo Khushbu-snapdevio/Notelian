@@ -4,8 +4,8 @@
 
 File Storage handles all binary uploads in Notelian — page cover images, page icons, and media blocks (Image, Video, Audio, File). Every uploaded file is stored in object storage (S3-compatible) and served through a CDN.
 
-**Storage provider:** Any **S3-compatible** object storage (e.g. AWS S3, Cloudflare R2, MinIO, Backblaze B2) — accessed via the S3 API
-**CDN:** A CDN in front of the bucket serves files from the edge (e.g. CloudFront, Cloudflare, or the provider's own CDN)
+**Storage provider:** Any **S3-compatible** object storage — accessed via the S3 API
+**CDN:** A CDN in front of the bucket serves files from the edge
 
 ---
 
@@ -40,7 +40,7 @@ Client                     API Server              S3-compatible storage
 |--------|----------|-------------|--------|
 | POST | `/api/uploads/sign` | Request a pre-signed PUT URL | Authenticated member |
 | POST | `/api/uploads/confirm` | Confirm upload complete, record usage | Authenticated member |
-| DELETE | `/api/uploads/:objectKey` | Delete a stored file | System (on block delete) |
+| DELETE | `/api/uploads/:objectKey` | Delete a stored file | System (orphaned-media cleanup job) |
 
 ---
 
@@ -115,12 +115,21 @@ Files are deleted from storage when:
 
 | Trigger | Behavior |
 |---------|---------|
-| Block deleted from editor | Delete file from storage; decrement usage |
+| Block deleted from editor | File is **not** deleted immediately — this preserves undo (`Ctrl+Z`) and Version History restore. The file becomes a deletion candidate and is removed later by the orphaned-media cleanup job (below); usage is decremented when the file is actually deleted. |
 | Page permanently deleted | Delete all file blocks on the page from storage; decrement usage |
 | Workspace deleted | Delete all workspace files from storage; usage record dropped |
 | Upload aborted / not confirmed within 30 minutes | Object is cleaned up by a pg-boss job (stale upload cleanup) |
 
 Deletes from storage are async — queued as a pg-boss job so the UI is not blocked.
+
+### Orphaned-media cleanup
+
+Because deleting a block is reversible (in-session undo, and page Version History for 7 days), the stored file is **never** deleted at the moment a block is removed. Instead, a daily pg-boss job (`cleanup-orphaned-media`) deletes a file only when **both** are true:
+
+- No active block on any live page references the object key, **and**
+- The object key is not referenced by any page version within the 7-day Version History retention window.
+
+Only then is the object removed from storage and the workspace `bytes_used` decremented. This guarantees that undoing a block delete — or restoring an older page version — always finds its media intact.
 
 ---
 
@@ -166,6 +175,7 @@ WorkspaceStorageUsage
 | Job | Schedule | Description |
 |-----|----------|-------------|
 | `cleanup-stale-uploads` | Every 30 minutes | Delete storage objects for uploads not confirmed within 30 minutes (abandoned uploads) |
+| `cleanup-orphaned-media` | Daily | Delete stored files no longer referenced by any active block or by a page version within the 7-day window, then decrement `bytes_used` |
 | `sync-storage-usage` | Daily | Reconcile `bytes_used` against actual storage objects for drift correction |
 
 ---
@@ -177,7 +187,7 @@ WorkspaceStorageUsage
 3. An upload is not recorded until `/api/uploads/confirm` is called with the object key.
 4. Storage quota is checked before issuing a pre-signed URL — a quota breach blocks the upload before any bytes are sent.
 5. File deletion from storage is always async via pg-boss — the UI reflects deletion immediately but storage cleanup happens in the background.
-6. Deleting a file block decrements the workspace's `bytes_used` immediately on confirm.
+6. Deleting a file block does not decrement `bytes_used` immediately — usage is decremented when the orphaned-media cleanup job actually removes the file (after it leaves the 7-day Version History window), so undo and version restore keep working.
 7. Workspace storage usage is shown to all members.
 8. CDN URLs are stable — a file's public URL does not change after upload.
 9. Abandoned uploads (not confirmed within 30 minutes) are cleaned up by the stale-upload job.

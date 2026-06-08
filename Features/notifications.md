@@ -31,6 +31,7 @@ Notifications keep users informed about activity that involves them — @mention
 | You are added to a workspace | New member |
 | You are granted access to a page | The user who was granted access |
 | A guest invite you sent is accepted | The inviting user |
+| A trashed page is 3 days from permanent deletion | The user who deleted the page and the page creator |
 
 ---
 
@@ -85,7 +86,7 @@ Each notification shows:
 | All | All notifications (default) |
 | Mentions | Only @mention notifications |
 | Comments | Comment, reply, and resolution events |
-| Updates | Access grants, workspace invites |
+| Updates | Access grants, workspace invites, trash auto-deletion warnings |
 
 ---
 
@@ -119,6 +120,8 @@ When a notification arrives while the user is active in the app, a toast appears
 - Clicking `"View →"` opens the notification center and the source page
 
 Real-time delivery via **Server-Sent Events (SSE)** while the user is active. If the user is offline or the tab is inactive, notifications are queued and delivered on next notification center open.
+
+> **Deployment note:** The SSE stream (`GET /api/notifications/stream`) is a long-lived HTTP connection and must run on a host that supports persistent connections — **Railway** or any VM/long-lived Node server. Vercel serverless functions cap function/stream duration (≈10–300s depending on plan) and will terminate the connection, so the stream route should not be deployed as a standard serverless function. The client uses the browser's native `EventSource`, which **auto-reconnects** on drop; if the stream is unavailable, the client falls back to polling `GET /api/notifications` and the Notification Center remains the durable source of truth (see business rule 8). Decide the hosting target for this route before building real-time delivery.
 
 ---
 
@@ -202,6 +205,14 @@ All notification jobs are managed by **pg-boss** within the same PostgreSQL data
 - Failed jobs after 3 retries are logged to the error monitoring system
 - Email sending uses **Nodemailer** via SMTP — configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, and `SMTP_SECURE`
 
+### Background Jobs (pg-boss)
+
+| Job | Schedule | Description |
+|-----|----------|-------------|
+| `send-notification-email` | On event / scheduled | Deliver per-event notification emails (real-time frequency); retries up to 3× with exponential backoff |
+| `send-email-digest` | Daily 08:00 (user TZ) / weekly | Send the daily or weekly digest of unread notifications |
+| `cleanup-old-notifications` | Nightly | Permanently delete notifications older than 90 days |
+
 ---
 
 ## Data Model
@@ -213,7 +224,8 @@ Notification
 ├── recipient_id        (foreign key → User)
 ├── sender_id           (foreign key → User, nullable — null for system events)
 ├── type                (enum: mention | comment | reply | resolved | reopened |
-│                        access_granted | workspace_invite | guest_accepted)
+│                        access_granted | workspace_invite | guest_accepted |
+│                        trash_warning)
 ├── page_id             (foreign key → Page)
 ├── source_id           (uuid — ID of the comment, block, etc. that triggered it)
 ├── content_snippet     (string — up to 100 chars of relevant content)
@@ -240,7 +252,7 @@ NotificationPreference
 | POST | `/api/notifications/read-all` | Mark all notifications as read | Authenticated |
 | GET | `/api/user/notification-preferences` | Get notification preferences | Authenticated |
 | PATCH | `/api/user/notification-preferences` | Update email frequency / digest day | Authenticated |
-| GET | `/api/notifications/stream` | SSE stream for real-time notifications | Authenticated |
+| GET | `/api/notifications/stream` | SSE stream for real-time notifications (requires a persistent-connection host — see Deployment note) | Authenticated |
 
 ---
 
@@ -262,7 +274,7 @@ NotificationPreference
 5. Empty digests are not sent. A daily digest is skipped if there are no unread notifications.
 6. Notification retention is 90 days. Notifications older than 90 days are permanently deleted.
 7. Changing email frequency takes effect from the next scheduled delivery cycle.
-8. Real-time SSE delivery is best-effort. Notifications are always available in the Notification Center regardless of SSE delivery status.
+8. Real-time SSE delivery is best-effort. The client auto-reconnects on connection drop and falls back to polling `GET /api/notifications` if the stream is unavailable; notifications are always available in the Notification Center regardless of SSE delivery status.
 9. Failed email delivery jobs retry up to 3 times before being logged as failed.
 
 ---

@@ -129,6 +129,7 @@ Hierarchical display of all pages in the workspace.
 - Shows all pages deleted within the last 30 days
 - Pages in Trash are listed in deletion order (most recent first)
 - Each entry has: `"Restore"` and `"Delete Permanently"` actions
+- **Empty Trash:** an `"Empty Trash"` action at the top of the Trash view permanently deletes all trashed pages at once (after a confirmation dialog) — irreversible
 - After the retention period, pages are auto-deleted permanently (no recovery)
 
 ---
@@ -154,17 +155,25 @@ UserPreferences
 ├── workspace_id        (foreign key → Workspace)
 ├── sidebar_width       (integer — pixels, default: 240)
 ├── sidebar_collapsed   (boolean, default: false)
-├── recently_visited    (uuid[] — ordered list of page IDs, max 10)
 └── updated_at          (timestamp)
 
-Favorite
+UserFavorite
 ├── id                  (uuid, primary key)
 ├── user_id             (foreign key → User)
 ├── page_id             (foreign key → Page)
 ├── workspace_id        (foreign key → Workspace)
 ├── order_index         (integer)
 └── created_at          (timestamp)
+
+UserRecentlyVisited
+├── id                  (uuid, primary key)
+├── user_id             (foreign key → User)
+├── workspace_id        (foreign key → Workspace)
+├── page_id             (foreign key → Page)
+└── visited_at          (timestamp)
 ```
+
+> The recently visited list is stored in its own `UserRecentlyVisited` table (one row per visit, ordered by `visited_at`), keeping it per-workspace and indexable. The 10-entry cap is enforced at query/write time. See [search.md](search.md) for the canonical definition.
 
 ---
 
@@ -180,6 +189,7 @@ Favorite
 | DELETE | `/api/user/favorites/:pageId` | Remove a page from favorites | Authenticated |
 | PATCH | `/api/user/favorites/reorder` | Reorder favorites | Authenticated |
 | GET | `/api/user/recently-visited` | Recently visited pages | Authenticated |
+| POST | `/api/user/recently-visited` | Record a page visit | Authenticated |
 
 ---
 

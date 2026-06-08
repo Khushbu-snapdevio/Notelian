@@ -135,9 +135,11 @@ Accessible from the page options menu (`···`) or `"Page"` button in the top-r
 - `···` → `"Delete"` — moves the page to **Trash** (does not delete immediately)
 - Deleted pages are visible in the Trash section of the sidebar
 - **Retention:** 30 days. After this period, the page is permanently auto-deleted.
-- **Warning:** At 7 days remaining before auto-deletion, the page shows a warning banner when viewed from Trash.
+- **Warning banner:** At 7 days remaining before auto-deletion, the page shows a warning banner when viewed from Trash.
+- **Warning notification:** At 3 days remaining, a one-time in-app + email notification is sent to the user who deleted the page and the page creator, so they can restore it before it is pruned.
 - Restore: moves page back to its original parent (or workspace root if parent was also deleted)
 - Permanent Delete: immediately removes the page and all its content
+- **Empty Trash:** permanently deletes all pages currently in Trash in a single action (requires a confirmation dialog) — irreversible. An Admin empties the entire workspace Trash; a non-admin empties only the trashed pages they have permission to permanently delete
 
 **Admin note:** Workspace Admins can permanently delete any page at any time from Trash.
 
@@ -220,7 +222,7 @@ Page
 ├── is_locked           (boolean, default: false)
 ├── is_deleted          (boolean, default: false)
 ├── deleted_at          (timestamp, nullable)
-├── created_by          (user_id, foreign key)
+├── created_by          (user_id, foreign key, nullable — ON DELETE SET NULL; null = "Former Member")
 ├── created_at          (timestamp)
 └── updated_at          (timestamp)
 ```
@@ -235,7 +237,7 @@ PageVersion
 ├── page_id             (foreign key → Page)
 ├── content_snapshot    (jsonb — full serialized block structure at time of save)
 ├── label               (string, nullable — optional name e.g. "Before restructure")
-├── created_by          (user_id, foreign key)
+├── created_by          (user_id, foreign key, nullable — ON DELETE SET NULL)
 └── created_at          (timestamp)
 ```
 
@@ -248,7 +250,8 @@ Versions are created automatically on each auto-save (debounced — one version 
 | Job | Schedule | Description |
 |-----|----------|-------------|
 | `auto-delete-expired-trash` | Daily at 02:00 UTC | Permanently deletes pages where `is_deleted = true` and `deleted_at` exceeds the 30-day trash retention. Cascades to subpages and queues object-storage file deletion for all file blocks on those pages. |
-| `warn-expiring-trash` | Daily at 02:00 UTC | For pages within 7 days of the 30-day auto-deletion deadline, sets a flag so the warning banner appears when the page is viewed from Trash. |
+| `warn-expiring-trash` | Daily at 02:00 UTC | For pages within 7 days of the 30-day auto-deletion deadline, sets a flag so the warning banner appears when the page is viewed from Trash. At 3 days remaining, enqueues a one-time auto-deletion warning notification (in-app + email) to the page's deleter and creator. |
+| `auto-delete-expired-versions` | Daily | Prunes page versions older than the 7-day Version History retention window. |
 
 ---
 
@@ -262,6 +265,7 @@ Versions are created automatically on each auto-save (debounced — one version 
 | DELETE | `/api/pages/:id` | Move page to Trash | Can Edit+ |
 | POST | `/api/pages/:id/restore` | Restore from Trash | Can Edit+ |
 | DELETE | `/api/pages/:id/permanent` | Permanently delete | Admin or Full Access |
+| DELETE | `/api/workspaces/:id/trash` | Empty Trash — permanently delete all trashed pages the caller may delete | Admin or Full Access |
 | POST | `/api/pages/:id/duplicate` | Duplicate page | Can Edit+ |
 | PATCH | `/api/pages/:id/move` | Move page to new parent | Can Edit+ |
 | GET | `/api/pages/:id/versions` | List version history | Can View+ |
@@ -293,6 +297,8 @@ Versions are created automatically on each auto-save (debounced — one version 
 8. A locked page cannot be edited by anyone until unlocked — including workspace Admins.
 9. Only users with Full Access on a page can lock or unlock it.
 10. Subpages of a deleted page are also moved to Trash together.
+11. "Empty Trash" permanently deletes all trashed pages in one action after explicit confirmation. It is irreversible and follows the same per-page delete permissions as a single permanent delete.
+12. A trashed page sends a one-time auto-deletion warning notification (in-app + email) to the user who deleted it and the page creator 3 days before it is permanently pruned.
 
 ---
 

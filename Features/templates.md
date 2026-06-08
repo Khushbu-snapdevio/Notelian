@@ -270,13 +270,13 @@ Template
 
 | Method | Endpoint | Description | Access |
 |--------|----------|-------------|--------|
-| GET | `/orbit/api/templates` | List all built-in templates (draft + published) | Platform Admin |
-| POST | `/orbit/api/templates` | Create a new built-in template | Platform Admin |
-| GET | `/orbit/api/templates/:id` | Get built-in template detail | Platform Admin |
-| PATCH | `/orbit/api/templates/:id` | Update template content, name, category | Platform Admin |
-| PATCH | `/orbit/api/templates/:id/publish` | Publish template (make visible to users) | Platform Admin |
-| PATCH | `/orbit/api/templates/:id/unpublish` | Unpublish template (hide from gallery) | Platform Admin |
-| DELETE | `/orbit/api/templates/:id` | Delete a built-in template | Platform Admin |
+| GET | `/api/orbit/templates` | List all built-in templates (draft + published) | Platform Admin |
+| POST | `/api/orbit/templates` | Create a new built-in template | Platform Admin |
+| GET | `/api/orbit/templates/:id` | Get built-in template detail | Platform Admin |
+| PATCH | `/api/orbit/templates/:id` | Update template content, name, category | Platform Admin |
+| PATCH | `/api/orbit/templates/:id/publish` | Publish template (make visible to users) | Platform Admin |
+| PATCH | `/api/orbit/templates/:id/unpublish` | Unpublish template (hide from gallery) | Platform Admin |
+| DELETE | `/api/orbit/templates/:id` | Delete a built-in template | Platform Admin |
 
 ---
 
