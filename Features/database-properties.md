@@ -168,7 +168,7 @@ Creates a bidirectional link between entries across databases (or within the sam
 
 **Behavior:**
 - Adding a relation on entry A automatically adds A to the back-relation on entry B (both sides written in one transaction)
-- If the target entry is deleted, the relation chip shows `"Deleted entry"` (link broken); the deleted entry's id is scrubbed from the other side's relation values by the delete transaction (or the trash-purge job for trashed entries) so counts and filters stay correct
+- If the target entry is deleted, the relation chip shows `"Deleted entry"` (link broken); the deleted entry's id is scrubbed from the other side's relation values by the delete transaction (or the `auto-delete-expired-trash` job for trashed entries) so counts and filters stay correct
 - Back-relation property is read-only — cannot be renamed or edited from the target database; deleting the source Relation property removes the back-relation and both sides' values in one transaction
 
 **Filters:** Contains (entry), Does not contain, Is empty, Is not empty

@@ -20,18 +20,20 @@ Notifications keep users informed about activity that involves them — @mention
 
 ## Notification Triggers
 
-| Event | Who is notified |
-|-------|----------------|
-| @mention in a comment | Mentioned user |
-| @mention in page content | Mentioned user |
-| New comment on a page you created | Page creator |
-| Reply in a thread you participated in | All prior thread participants |
-| Comment thread resolved | All prior thread participants |
-| Comment thread reopened | All prior thread participants |
-| You are added to a workspace | New member |
-| You are granted access to a page | The user who was granted access |
-| A guest invite you sent is accepted | The inviting user |
-| A trashed page is 3 days from permanent deletion | The user who deleted the page and the page creator |
+| Event | Who is notified | `notification_type` |
+|-------|----------------|---------------------|
+| @mention in a comment | Mentioned user | `mention` |
+| @mention in page content | Mentioned user | `mention` |
+| New comment on a page you created | Page creator | `comment` |
+| Reply in a thread you participated in | All prior thread participants | `reply` |
+| Comment thread resolved | All prior thread participants | `resolved` |
+| Comment thread reopened | All prior thread participants | `reopened` |
+| You are added to a workspace | New member | `workspace_invite` |
+| You are granted access to a page | The user who was granted access | `access_granted` |
+| A guest invite you sent is accepted | The inviting user | `guest_accepted` |
+| A trashed page is 3 days from permanent deletion | The user who deleted the page and the page creator | `trash_warning` |
+
+> These ten triggers cover all nine `notification_type` enum values in [DATABASE-PLAN.md](../DATABASE-PLAN.md) (both `@mention` rows map to `mention`).
 
 ---
 
