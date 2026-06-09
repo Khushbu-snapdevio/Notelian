@@ -356,7 +356,10 @@ notelian/
 │   └── ui/                     # Design system primitives
 ├── lib/
 │   ├── auth/                   # Better Auth config
-│   ├── db/                     # Drizzle schema + queries
+│   ├── db/
+│   │   ├── schema/             # Drizzle schema — one file per domain + types.ts + index.ts barrel
+│   │   ├── index.ts            # Drizzle client
+│   │   └── queries/            # Reusable query helpers
 │   ├── jobs/                   # pg-boss job definitions + registration
 │   ├── notifications/          # Notification triggers
 │   └── storage/                # S3 pre-signed URL helpers

@@ -44,7 +44,12 @@ notelian/
 │   └── ui/                     # Design system primitives
 ├── lib/                        # Business logic and utilities
 │   ├── auth/                   # Better Auth configuration
-│   ├── db/                     # Drizzle schema and queries
+│   ├── db/
+│   │   ├── schema/             # Drizzle schema — one file per domain (auth, pages, …)
+│   │   │   ├── types.ts        #   shared enums + custom types + updatedAt() helper
+│   │   │   └── index.ts        #   barrel: re-exports every domain file
+│   │   ├── index.ts            # Drizzle client (postgres-js)
+│   │   └── queries/            # Reusable query helpers
 │   ├── jobs/                   # pg-boss job definitions + registration
 │   ├── notifications/          # Notification triggers
 │   └── storage/                # S3 pre-signed URL helpers

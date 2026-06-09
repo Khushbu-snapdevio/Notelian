@@ -1,6 +1,8 @@
 # Notelian — Database Schema (Drizzle ORM)
 
-Every table required across the whole project, as Drizzle models. Built from [README.md](README.md) and all the [Features/](Features/) specs. Drop into `lib/db/schema.ts`.
+Every table required across the whole project, as Drizzle models. Built from [README.md](README.md) and all the [Features/](Features/) specs.
+
+The schema is **split one file per domain** under `lib/db/schema/` (not a single `schema.ts`) — shared enums and helpers live in `lib/db/schema/types.ts`, and `lib/db/schema/index.ts` re-exports every file so the rest of the app imports from one place. See [Schema file layout](#schema-file-layout) for the full mapping. Each `##` section below corresponds to one file.
 
 ## Tables at a glance
 
@@ -36,10 +38,38 @@ Every table required across the whole project, as Drizzle models. Built from [RE
 
 ---
 
-## Imports, custom types, enums
+## Schema file layout
+
+The schema lives in `lib/db/schema/` — one file per domain, mirroring how a real Drizzle project (and Krova) organizes it. A single 800-line `schema.ts` is hard to navigate and review; splitting by domain keeps each file small and makes diffs readable.
+
+| File | Tables / contents |
+|------|-------------------|
+| `lib/db/schema/types.ts` | Shared `customType` (`tsvector`), the `updatedAt()` helper, and **every `pgEnum`** — imported by the domain files below |
+| `lib/db/schema/auth.ts` | `users`, `sessions`, `accounts`, `verifications` |
+| `lib/db/schema/workspace.ts` | `workspaces`, `workspace_members` |
+| `lib/db/schema/pages.ts` | `pages`, `page_closure`, `page_versions`, `blocks` |
+| `lib/db/schema/databases.ts` | `database_views`, `database_properties`, `property_values` |
+| `lib/db/schema/sharing.ts` | `page_permissions`, `public_links`, `guest_invitations` |
+| `lib/db/schema/collaboration.ts` | `comments`, `notifications`, `notification_preferences` |
+| `lib/db/schema/search.ts` | `search_index` |
+| `lib/db/schema/templates.ts` | `templates` |
+| `lib/db/schema/files.ts` | `file_uploads`, `workspace_storage_usage` |
+| `lib/db/schema/user-state.ts` | `user_preferences`, `user_hint_states`, `user_favorites`, `user_recently_visited` |
+| `lib/db/schema/platform.ts` | `platform_audit_log` |
+| `lib/db/schema/index.ts` | **Barrel** — `export * from "./auth"`, `"./workspace"`, … for every file above |
+
+**Conventions:**
+- Each domain file imports shared pieces from `./types` (`import { pageKind, updatedAt, tsvector } from "./types"`) and table refs it needs cross-domain (e.g. `pages.ts` imports `workspaces` from `./workspace`).
+- **Drizzle relations co-locate with their tables** — each file declares its own `relations(...)` block. The [Relations](#relations-core-graph) section below shows them together only for readability.
+- The app and `drizzle.config.ts` point at the **directory / barrel**, never a single file: `import * as schema from "@/lib/db/schema"`.
+- `drizzle-kit` is configured with `schema: "./lib/db/schema"` so it picks up every file in the folder.
+
+---
+
+## Imports, custom types, enums — `lib/db/schema/types.ts`
 
 ```ts
-// lib/db/schema.ts
+// lib/db/schema/types.ts  —  shared by every domain file (imported via `./types`)
 import {
   pgTable, pgEnum, uuid, text, varchar, boolean, integer, bigint,
   real, timestamp, jsonb, primaryKey, uniqueIndex, index, customType,
@@ -101,7 +131,7 @@ export const searchSourceType = pgEnum("search_source_type", ["page", "entry", "
 export const auditTargetType  = pgEnum("audit_target_type", ["user", "workspace"]);
 ```
 
-## Auth (Better Auth: magic link + admin plugin)
+## Auth (Better Auth: magic link + admin plugin) — `lib/db/schema/auth.ts`
 
 ```ts
 export const users = pgTable("users", {
@@ -170,7 +200,7 @@ export const verifications = pgTable("verifications", {
 }));
 ```
 
-## Workspace
+## Workspace — `lib/db/schema/workspace.ts`
 
 ```ts
 export const workspaces = pgTable("workspaces", {
@@ -210,7 +240,7 @@ export const workspaceMembers = pgTable("workspace_members", {
 }));
 ```
 
-## Pages & content
+## Pages & content — `lib/db/schema/pages.ts`
 
 ```ts
 // Universal container: ordinary pages, databases, and database entries (kind discriminates)
@@ -295,7 +325,7 @@ export const blocks = pgTable("blocks", {
 }));
 ```
 
-## Databases (views, properties, values)
+## Databases (views, properties, values) — `lib/db/schema/databases.ts`
 
 ```ts
 export const databaseViews = pgTable("database_views", {
@@ -358,7 +388,7 @@ export const propertyValues = pgTable("property_values", {
 }));
 ```
 
-## Sharing & permissions
+## Sharing & permissions — `lib/db/schema/sharing.ts`
 
 ```ts
 export const pagePermissions = pgTable("page_permissions", {
@@ -404,7 +434,7 @@ export const guestInvitations = pgTable("guest_invitations", {
 }));
 ```
 
-## Collaboration
+## Collaboration — `lib/db/schema/collaboration.ts`
 
 ```ts
 // Block / text-level / page-level comments; one reply level deep
@@ -456,7 +486,7 @@ export const notificationPreferences = pgTable("notification_preferences", {
 });
 ```
 
-## Search
+## Search — `lib/db/schema/search.ts`
 
 ```ts
 export const searchIndex = pgTable("search_index", {
@@ -477,7 +507,10 @@ export const searchIndex = pgTable("search_index", {
 
 ## Templates, files, per-user state, platform admin
 
+> These four domains are small, so each gets its own file: `templates.ts`, `files.ts`, `user-state.ts`, `platform.ts`. They're shown together here for brevity; the `// lib/db/schema/…` comments mark where one file ends and the next begins.
+
 ```ts
+// lib/db/schema/templates.ts
 // Built-in (workspace_id NULL) + custom (workspace-scoped)
 export const templates = pgTable("templates", {
   id:           uuid("id").primaryKey().defaultRandom(),
@@ -500,6 +533,7 @@ export const fileUploadKind = pgEnum("file_upload_kind", [
   "page_cover", "page_icon", "block_media", "user_avatar", "workspace_icon",
 ]);
 
+// lib/db/schema/files.ts
 export const fileUploads = pgTable("file_uploads", {
   id:            uuid("id").primaryKey().defaultRandom(),
   // null for user_avatar — an avatar is global to the user, not workspace-scoped,
@@ -529,6 +563,7 @@ export const workspaceStorageUsage = pgTable("workspace_storage_usage", {
   updatedAt:   updatedAt(),
 });
 
+// lib/db/schema/user-state.ts
 export const userPreferences = pgTable("user_preferences", {
   id:               uuid("id").primaryKey().defaultRandom(),
   userId:           uuid("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
@@ -572,6 +607,7 @@ export const userRecentlyVisited = pgTable("user_recently_visited", {
 }));
 
 // Append-only Orbit Admin trail
+// lib/db/schema/platform.ts
 export const platformAuditLog = pgTable("platform_audit_log", {
   id:         uuid("id").primaryKey().defaultRandom(),
   actorId:    uuid("actor_id").references(() => users.id, { onDelete: "set null" }),
@@ -588,7 +624,10 @@ export const platformAuditLog = pgTable("platform_audit_log", {
 
 ## Relations (core graph)
 
+> **In code, each `*Relations` block lives in the same file as its table** (e.g. `usersRelations` in `auth.ts`, `pagesRelations` in `pages.ts`) — Drizzle resolves them through the `index.ts` barrel. They're collected here only to show the full graph in one place.
+
 ```ts
+// auth.ts
 export const usersRelations = relations(users, ({ one, many }) => ({
   sessions:          many(sessions),
   memberships:       many(workspaceMembers),
@@ -668,7 +707,7 @@ export const notificationsRelations = relations(notifications, ({ one }) => ({
 }));
 ```
 
-## Inferred types
+## Inferred types — co-located in each domain file
 
 Export row types straight off the tables — use these in queries and service signatures instead of re-declaring shapes:
 
@@ -761,7 +800,7 @@ Invariants the database **cannot** express as constraints. Enforce each in a ser
 
 ## Project setup to start development
 
-These three pieces make the schema runnable. Not part of `schema.ts` — they live in their own files.
+These three pieces make the schema runnable. They are **not** part of the schema files under `lib/db/schema/` — they live in their own files.
 
 **1. Dependencies** (`pnpm add` / `pnpm add -D`)
 
@@ -769,7 +808,7 @@ These three pieces make the schema runnable. Not part of `schema.ts` — they li
 // package.json (relevant entries)
 {
   "scripts": {
-    "db:generate": "drizzle-kit generate",   // build migration SQL from schema.ts
+    "db:generate": "drizzle-kit generate",   // build migration SQL from lib/db/schema/
     "db:migrate":  "drizzle-kit migrate",     // apply pending migrations
     "db:studio":   "drizzle-kit studio"       // browse data
   },
@@ -790,7 +829,7 @@ These three pieces make the schema runnable. Not part of `schema.ts` — they li
 import { defineConfig } from "drizzle-kit";
 
 export default defineConfig({
-  schema: "./lib/db/schema.ts",
+  schema: "./lib/db/schema",   // directory — drizzle-kit reads every *.ts file in it
   out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: { url: process.env.DATABASE_URL! },
@@ -805,7 +844,7 @@ export default defineConfig({
 ```ts
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import * as schema from "./schema";
+import * as schema from "./schema";   // resolves to lib/db/schema/index.ts (the barrel)
 
 const client = postgres(process.env.DATABASE_URL!, { prepare: false });
 export const db = drizzle(client, { schema, casing: "snake_case" });
