@@ -86,7 +86,7 @@ Each notification shows:
 | All | All notifications (default) |
 | Mentions | Only @mention notifications |
 | Comments | Comment, reply, and resolution events |
-| Updates | Access grants, workspace invites, trash auto-deletion warnings |
+| Updates | Access grants, workspace invites, guest-invite acceptances, trash auto-deletion warnings |
 
 ---
 

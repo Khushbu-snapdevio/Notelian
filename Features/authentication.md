@@ -78,7 +78,7 @@ Each active session shows:
 
 Available at `/settings/account`
 
-**Profile:** Update display name, avatar (upload or use initials as default)
+**Profile:** Update display name, avatar (upload or use initials as default), Role / Title (`job_title`), and timezone (IANA tz, auto-detected from the browser on first sign-in; used for digest-email delivery — see [notifications.md](notifications.md))
 
 **Danger Zone — Delete Account:**
 - If the user is the Admin of any workspace, they must transfer ownership first
@@ -187,6 +187,7 @@ Better Auth exposes a unified handler at `/api/auth/[...all]`.
 | Concern | Mitigation |
 |---------|-----------|
 | Email enumeration | Magic-link requests always return the same message regardless of whether the email exists |
+| Magic-link abuse / email bombing | Magic-link requests are rate-limited — **3 / 15 min per email** and **10 / hour per IP**. Throttled requests still return the same generic message (no enumeration via rate-limit behavior). |
 | Session hijacking | Database-backed sessions; token hashed in DB |
 | Token reuse | Magic-link tokens are single-use and expire after 15 minutes |
 | Banned users | Sessions revoked immediately on ban |
@@ -201,6 +202,7 @@ Better Auth exposes a unified handler at `/api/auth/[...all]`.
 2. Authentication is passwordless — magic link is the only sign-in / sign-up method.
 3. A successful magic-link sign-in marks the email as verified — clicking the link proves ownership, so there is no separate verification step.
 4. Magic-link tokens are single-use and expire after 15 minutes.
+4a. Magic-link requests are rate-limited (3 / 15 min per email, 10 / hour per IP) — it is the only sign-in path, so the endpoint is throttled to prevent email bombing, SMTP-cost abuse, and enumeration via timing. Throttled responses return the same generic message.
 5. A banned user's sessions are revoked immediately and cannot re-authenticate until unbanned.
 6. A user cannot delete their account if they are the sole Admin of any workspace — ownership must be transferred first.
 7. Magic-link requests always return the same response regardless of whether the email exists — prevents account enumeration.

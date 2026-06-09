@@ -296,7 +296,7 @@ Two-layer access control: workspace roles + page-level permissions.
 
 ## 15. File Storage
 
-Binary uploads stored in S3-compatible object storage and served via a CDN. Covers page cover images, page icons, and all media blocks (Image, Video, Audio, File).
+Binary uploads stored in S3-compatible object storage and served via a CDN. Covers page cover images, page icons, user avatars, workspace icons, and all media blocks (Image, Video, Audio, File).
 
 **Provider:** Any S3-compatible object storage
 
@@ -308,6 +308,8 @@ Binary uploads stored in S3-compatible object storage and served via a CDN. Cove
 |------|---------|
 | Page cover image | 5 MB |
 | Page icon | 1 MB |
+| User avatar | 1 MB |
+| Workspace icon | 1 MB |
 | Image block | 10 MB |
 | Video / Audio block | 50 MB |
 | File block | 100 MB |
@@ -378,7 +380,7 @@ Decisions that are **hard or impossible to change after data exists** — they m
 | 3 | **Permission resolution** | **Single recursive CTE** that walks parents to the first explicit permission or workspace root | Computing effective permissions in application code is an N+1 query trap. Must be one query, designed up front. |
 | 4 | **Search index maintenance** | **PostgreSQL triggers that fire on block-content changes, not just page-title changes** | Block content lives separately from the title; a title-only trigger silently produces stale search results. Test triggers under bulk ops (import, mass delete). |
 | 5 | **Permission filtering location** | **Enforced at the SQL query level**, never in application code after fetch | App-level filtering after a broad query is a BOLA vulnerability — restricted rows leave the database before they're filtered. |
-| 6 | **Real-time delivery (SSE)** | **Long-lived Node.js server (PM2 / Docker)**, not Vercel serverless | Serverless function timeouts kill long-lived SSE connections. The deploy target is a prerequisite for choosing SSE. |
+| 6 | **Real-time delivery (SSE)** | Host the `GET /api/notifications/stream` route on a **persistent-connection target (Railway / long-lived Node server, PM2 / Docker)**. If deploying the app on Vercel, that one route can't be a standard serverless function — but the client's `EventSource` auto-reconnect + polling fallback keeps the Notification Center correct, so Vercel remains viable with degraded liveness. | Serverless function timeouts kill long-lived SSE connections. The deploy target for this route is a prerequisite for choosing SSE; settle it before building real-time delivery. (Consistent with [development-plan.md](Features/development-plan.md) and [notifications.md](Features/notifications.md).) |
 
 ---
 
@@ -393,4 +395,4 @@ Accessibility is not addressed in the original specs and is cheapest to build in
 
 ---
 
-*Last updated: 2026-06-08*
+*Last updated: 2026-06-09*

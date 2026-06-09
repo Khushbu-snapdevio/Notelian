@@ -296,6 +296,8 @@ MAXMIND_LICENSE_KEY=<optional — session-list geolocation>
 |------|---------|
 | Page cover image | 5 MB |
 | Page icon | 1 MB |
+| User avatar | 1 MB |
+| Workspace icon | 1 MB |
 | Image block | 10 MB |
 | Video / Audio block | 50 MB |
 | File block | 100 MB |
@@ -305,13 +307,14 @@ MAXMIND_LICENSE_KEY=<optional — session-list geolocation>
 ## 6. Database Schema Overview
 
 ```
-Core:           users, sessions, accounts, verification_tokens
+Core:           users, sessions, accounts, verifications
                 workspaces, workspace_members
                 pages (covers both pages AND database entries)
-                page_versions, blocks (content stored as JSONB)
+                page_closure, page_versions, blocks (content stored as JSONB)
 
-Database:       databases (extends pages), database_views,
-                database_properties, property_values
+Database:       database_views, database_properties, property_values
+                (a database is a "pages" row where kind='database' —
+                 there is no separate "databases" table)
 
 Sharing:        page_permissions, public_links, guest_invitations
 
@@ -454,7 +457,7 @@ Fixed limits to enforce in code, collected from across the feature specs:
 | Stacked sort rules per view | 5 | Databases |
 | Recently visited | 10 recent (Favorites are uncapped) | Navigation |
 | Undo history | 200 steps (per session) | Editor |
-| Magic-link requests | **No limit** (sign-in requests not rate-limited) | Auth |
+| Magic-link requests | **3 / 15 min per email · 10 / hour per IP** (throttled; same generic response when limited) | Auth |
 | Magic-link token validity | 15 minutes, single-use | Auth |
 
 ---
@@ -500,4 +503,4 @@ Real-time multiplayer (P2) · public REST API & webhooks (P3) · SSO/SAML (P3) �
 
 ---
 
-*Single-file development reference for Notelian. Last updated: 2026-06-08.*
+*Single-file development reference for Notelian. Last updated: 2026-06-09.*

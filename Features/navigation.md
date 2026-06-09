@@ -151,8 +151,8 @@ Hierarchical display of all pages in the workspace.
 ```
 UserPreferences
 ├── id                  (uuid, primary key)
-├── user_id             (foreign key → User, unique)
-├── workspace_id        (foreign key → Workspace)
+├── user_id             (foreign key → User, unique — one row per user, global)
+├── last_workspace_id   (foreign key → Workspace, nullable — last active workspace, for redirect on login)
 ├── sidebar_width       (integer — pixels, default: 240)
 ├── sidebar_collapsed   (boolean, default: false)
 └── updated_at          (timestamp)
@@ -212,7 +212,7 @@ UserRecentlyVisited
 5. Trash retains pages for 30 days. After this period, pages are permanently and irreversibly deleted.
 6. Restoring a page from Trash restores it to its original location in the page tree, if the parent still exists. If the parent was also deleted, the page is restored to the top level.
 7. Recently visited list is per-user and per-workspace — max 10 entries, oldest entry dropped when a new one is added.
-8. Sidebar resize preferences are saved per-user and persist across sessions.
+8. Sidebar resize/collapse preferences are saved **per-user (global, not per-workspace)** and persist across sessions — `user_preferences` holds one row per user. `last_workspace_id` records the most recently active workspace for the post-login redirect.
 
 ---
 

@@ -23,7 +23,9 @@ Every table required across the whole project, as Drizzle models. Built from [RE
 - **Single-table page inheritance:** databases and database entries are rows in `pages`, discriminated by `pages.kind` (`page` / `database` / `entry`). Entries point to their database via `database_id`; databases point to their default view via `default_view_id`. This gives databases/entries every page feature (icon, cover, blocks, comments, versions, permissions, trash) for free.
 - **Closure table** (`page_closure`) backs the page hierarchy so "all descendants" is one query (for permissions, search scope, bulk ops). `pages.parent_id` keeps the immediate parent.
 - **Block content is `jsonb` with `schema_version`** so block shapes can be migrated later.
-- **Inherited permissions are never stored** — resolved at runtime by walking `parent_id` up to the first explicit `page_permissions` row, then `workspaces.default_page_access`.
+- **`updated_at` is refreshed on UPDATE, not just INSERT.** Every `updated_at` column uses the `updatedAt()` helper (`.defaultNow().$onUpdate(...)`) — a plain `.defaultNow()` only stamps on insert, which would leave "Last Edited Time", edited-recency search ranking, and version pruning stale. Equivalent enforcement: a `BEFORE UPDATE` trigger per table.
+- **The database "Title" property is virtual — not a `database_properties` row.** Each entry's title lives in `pages.title` (entries are pages). Title is synthesized as a read-only property always rendered at column position 1: it cannot be deleted or reordered, does **not** count toward the 50-property limit, and is **never** written to `property_values`. Filters and sorts on Title resolve directly against `pages.title` (search weight A). Only user-created properties live in `database_properties` / `property_values`.
+- **Inherited permissions are never stored** — resolved at runtime by walking `parent_id` up to the first explicit `page_permissions` row, then `workspaces.default_page_access`. **A private page (`is_private = true`) short-circuits this:** only the creator and explicit `page_permissions` grants apply — inheritance and the workspace default are skipped, and workspace Admins are denied too.
 - **Search** is Postgres FTS: `search_index.search_vector` (`tsvector`, GIN index) kept current by triggers on blocks/property values/comments.
 - **Deferred FK:** `pages.default_view_id → database_views.id` and `database_views.database_id → pages.id` are circular — add the `default_view_id` constraint in a follow-up migration `ALTER TABLE`.
 - **Page tree order:** `pages.order_index` holds sibling order within a parent (sidebar drag-and-drop, "new pages at the bottom"). The page tree is read as `(parent_id, order_index)`.
@@ -49,6 +51,15 @@ import { relations, sql } from "drizzle-orm";
 export const tsvector = customType<{ data: string }>({
   dataType() { return "tsvector"; },
 });
+
+// Convention: EVERY `updated_at` column uses this helper so the timestamp is
+// refreshed on UPDATE, not just INSERT. `defaultNow()` alone fires only on
+// insert — without `$onUpdate`, "Last Edited Time", edited-recency search
+// ranking, and version logic silently go stale. Use `updatedAt()` everywhere
+// a table has an `updated_at` column. (A BEFORE UPDATE trigger is the
+// equivalent if you prefer enforcing it in the DB instead of the ORM.)
+const updatedAt = () =>
+  timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date());
 
 export const workspaceRole     = pgEnum("workspace_role", ["admin", "editor", "viewer"]);
 export const memberStatus      = pgEnum("member_status", ["active", "invited"]);
@@ -113,7 +124,7 @@ export const users = pgTable("users", {
 
   lastActiveAt: timestamp("last_active_at", { withTimezone: true }),
   createdAt:    timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt:    timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:    updatedAt(),
 });
 
 export const sessions = pgTable("sessions", {
@@ -125,7 +136,7 @@ export const sessions = pgTable("sessions", {
   userAgent:      text("user_agent"),
   impersonatedBy: uuid("impersonated_by").references(() => users.id, { onDelete: "set null" }),
   createdAt:      timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt:      timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:      updatedAt(),
 }, (t) => ({
   userIdx: index("sessions_user_idx").on(t.userId),
 }));
@@ -141,7 +152,7 @@ export const accounts = pgTable("accounts", {
   idToken:      text("id_token"),
   expiresAt:    timestamp("expires_at", { withTimezone: true }),
   createdAt:    timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt:    timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:    updatedAt(),
 }, (t) => ({
   userIdx: index("accounts_user_idx").on(t.userId),
 }));
@@ -153,7 +164,7 @@ export const verifications = pgTable("verifications", {
   value:      text("value").notNull(),        // hashed token
   expiresAt:  timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt:  timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt:  timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:  updatedAt(),
 }, (t) => ({
   identifierIdx: index("verifications_identifier_idx").on(t.identifier),
 }));
@@ -167,7 +178,7 @@ export const workspaces = pgTable("workspaces", {
   name:      text("name").notNull(),
   slug:      text("slug").notNull().unique(),
   icon:      text("icon"),
-  defaultPageAccess: defaultPageAccess("default_page_access").notNull().default("private"),
+  defaultPageAccess: defaultPageAccess("default_page_access").notNull().default("shared"),
 
   inviteLinkToken:  text("invite_link_token").unique(),
   inviteLinkActive: boolean("invite_link_active").notNull().default(false),
@@ -175,7 +186,7 @@ export const workspaces = pgTable("workspaces", {
 
   createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: updatedAt(),
 });
 
 // userId is null for pending email invites (account is created on first magic-link sign-in)
@@ -234,7 +245,7 @@ export const pages = pgTable("pages", {
   createdBy:    uuid("created_by").references(() => users.id, { onDelete: "set null" }),
   lastEditedBy: uuid("last_edited_by").references(() => users.id, { onDelete: "set null" }),
   createdAt:    timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt:    timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:    updatedAt(),
 }, (t) => ({
   shortIdIdx:   uniqueIndex("pages_short_id_idx").on(t.shortId),
   workspaceIdx: index("pages_workspace_idx").on(t.workspaceId),
@@ -277,7 +288,7 @@ export const blocks = pgTable("blocks", {
   orderIndex:    integer("order_index").notNull(),
   createdBy:     uuid("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt:     timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt:     timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:     updatedAt(),
 }, (t) => ({
   pageOrderIdx: index("blocks_page_order_idx").on(t.pageId, t.orderIndex),
   parentIdx:    index("blocks_parent_idx").on(t.parentBlockId),
@@ -302,7 +313,7 @@ export const databaseViews = pgTable("database_views", {
   entryOpenMode:      entryOpenMode("entry_open_mode").notNull().default("side_panel"),
   orderIndex:         integer("order_index").notNull().default(0),
   createdAt:          timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt:          timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:          updatedAt(),
 }, (t) => ({
   databaseIdx: index("database_views_database_idx").on(t.databaseId),
 }));
@@ -320,7 +331,7 @@ export const databaseProperties = pgTable("database_properties", {
   isBackRelation: boolean("is_back_relation").notNull().default(false),
   orderIndex:     integer("order_index").notNull().default(0),
   createdAt:      timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt:      timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:      updatedAt(),
 }, (t) => ({
   databaseIdx: index("database_properties_database_idx").on(t.databaseId),
 }));
@@ -331,10 +342,19 @@ export const propertyValues = pgTable("property_values", {
   entryId:    uuid("entry_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
   propertyId: uuid("property_id").notNull().references(() => databaseProperties.id, { onDelete: "cascade" }),
   value:      jsonb("value"),
-  updatedAt:  timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:  updatedAt(),
 }, (t) => ({
   uniqEntryProp: uniqueIndex("property_values_entry_prop_idx").on(t.entryId, t.propertyId),
   propertyIdx:   index("property_values_property_idx").on(t.propertyId),
+  // Filter/sort read path: a value is fetched per (entry, property), so the
+  // unique index above already serves point lookups. For filtering a whole
+  // database by one property's value (e.g. Status = "Done"), query is
+  // property_id = ? AND value @> ? — covered by propertyIdx + this GIN index
+  // on the jsonb. MVP scale (small teams) is fine on this; if a specific
+  // property type needs range/sort speed at scale, add an expression index
+  // (e.g. ((value->>'number')::numeric)) for that property — a clean, additive
+  // upgrade that needs no data migration.
+  valueGin:      index("property_values_value_gin_idx").using("gin", t.value),
 }));
 ```
 
@@ -349,7 +369,7 @@ export const pagePermissions = pgTable("page_permissions", {
   accessLevel: accessLevel("access_level").notNull(),
   grantedBy:   uuid("granted_by").references(() => users.id, { onDelete: "set null" }),
   createdAt:   timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt:   timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:   updatedAt(),
 }, (t) => ({
   pageIdx:       index("page_permissions_page_idx").on(t.pageId),
   uniqPageUser:  uniqueIndex("page_permissions_page_user_idx").on(t.pageId, t.userId),
@@ -364,7 +384,7 @@ export const publicLinks = pgTable("public_links", {
   isActive:    boolean("is_active").notNull().default(false),
   createdBy:   uuid("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt:   timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt:   timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:   updatedAt(),
 });
 
 export const guestInvitations = pgTable("guest_invitations", {
@@ -432,7 +452,7 @@ export const notificationPreferences = pgTable("notification_preferences", {
   userId:          uuid("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
   emailFrequency:  emailFrequency("email_frequency").notNull().default("daily"),
   weeklyDigestDay: integer("weekly_digest_day").notNull().default(1),  // 0=Sun … 6=Sat
-  updatedAt:       timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:       updatedAt(),
 });
 ```
 
@@ -447,7 +467,7 @@ export const searchIndex = pgTable("search_index", {
   title:        text("title"),
   searchVector: tsvector("search_vector"),  // weighted A/B/C/D
   pageId:       uuid("page_id").notNull().references(() => pages.id, { onDelete: "cascade" }),  // permission scoping
-  updatedAt:    timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:    updatedAt(),
 }, (t) => ({
   uniqSource:   uniqueIndex("search_index_source_idx").on(t.sourceType, t.sourceId),
   workspaceIdx: index("search_index_workspace_idx").on(t.workspaceId),
@@ -470,17 +490,26 @@ export const templates = pgTable("templates", {
   createdBy:    uuid("created_by").references(() => users.id, { onDelete: "set null" }),
   pageSnapshot: jsonb("page_snapshot").notNull(),  // blocks + structure, no entries
   createdAt:    timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt:    timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:    updatedAt(),
 }, (t) => ({
   workspaceIdx: index("templates_workspace_idx").on(t.workspaceId),
 }));
 
+// kind discriminates what the upload is attached to and how it's quota-counted
+export const fileUploadKind = pgEnum("file_upload_kind", [
+  "page_cover", "page_icon", "block_media", "user_avatar", "workspace_icon",
+]);
+
 export const fileUploads = pgTable("file_uploads", {
   id:            uuid("id").primaryKey().defaultRandom(),
-  workspaceId:   uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  // null for user_avatar — an avatar is global to the user, not workspace-scoped,
+  // and does NOT count toward any workspace's 5 GB quota. All other kinds are
+  // workspace-scoped and counted.
+  workspaceId:   uuid("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }),
+  kind:          fileUploadKind("kind").notNull(),
   pageId:        uuid("page_id").references(() => pages.id, { onDelete: "set null" }),
   blockId:       uuid("block_id").references(() => blocks.id, { onDelete: "set null" }),
-  objectKey:     text("object_key").notNull().unique(),  // {workspaceId}/{pageId}/{uuid}.{ext}
+  objectKey:     text("object_key").notNull().unique(),  // {workspaceId|"users"}/{pageId|userId}/{uuid}.{ext}
   fileUrl:       text("file_url").notNull(),             // CDN URL
   mimeType:      text("mime_type").notNull(),
   fileSizeBytes: bigint("file_size_bytes", { mode: "number" }).notNull(),
@@ -497,7 +526,7 @@ export const fileUploads = pgTable("file_uploads", {
 export const workspaceStorageUsage = pgTable("workspace_storage_usage", {
   workspaceId: uuid("workspace_id").primaryKey().references(() => workspaces.id, { onDelete: "cascade" }),
   bytesUsed:   bigint("bytes_used", { mode: "number" }).notNull().default(0),
-  updatedAt:   timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:   updatedAt(),
 });
 
 export const userPreferences = pgTable("user_preferences", {
@@ -506,7 +535,7 @@ export const userPreferences = pgTable("user_preferences", {
   lastWorkspaceId:  uuid("last_workspace_id").references(() => workspaces.id, { onDelete: "set null" }),
   sidebarWidth:     integer("sidebar_width").notNull().default(240),  // 200–480
   sidebarCollapsed: boolean("sidebar_collapsed").notNull().default(false),
-  updatedAt:        timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:        updatedAt(),
 });
 
 export const userHintStates = pgTable("user_hint_states", {
@@ -670,6 +699,7 @@ Invariants the database **cannot** express as constraints. Enforce each in a ser
 
 **Auth & account** ([authentication.md](Features/authentication.md))
 - Magic-link tokens are single-use and expire after 15 min; invalidate immediately on use.
+- **Rate-limit magic-link requests** — it's the only sign-in path, so an unthrottled endpoint is an email-bombing / SMTP-cost / enumeration-timing vector. Enforce per-email **3 requests / 15 min** and per-IP **10 requests / hour** (Better Auth rate-limit config or middleware). Throttled responses must still return the same generic message (no enumeration).
 - A banned user's sessions are revoked immediately; block re-auth until unbanned.
 - A user cannot delete their account while sole `admin` of any workspace — require transfer first.
 - Magic-link requests always return the same response whether or not the email exists (no enumeration).
@@ -695,7 +725,9 @@ Invariants the database **cannot** express as constraints. Enforce each in a ser
 - Built-in **Title** property is always position 1 and undeletable.
 - Max **50 user-created properties** per database (system + back-relation properties excluded).
 - Deleting a property deletes all its `property_values`; deleting a Select option clears it from all entries.
-- Relation properties are **bidirectional** — writing A→B also writes the back-relation B→A; back-relations are auto-created and read-only.
+- Relation properties are **bidirectional** — writing A→B also writes the back-relation B→A; back-relations are auto-created and read-only. Relation values are stored as a list of entry IDs inside `property_values.value` (jsonb) on **both** sides; the two sides are kept in sync **in the same transaction** as any relation write (add/remove). There is no FK from inside the jsonb, so:
+  - **On entry delete:** the deleted entry's own `property_values` cascade away, but its id remains embedded in the *other* side's relation lists. The delete transaction (or the `auto-delete-expired-trash` job, for trashed entries) must scrub the deleted id from every back-referenced entry's relation value. Until scrubbed, the UI renders a stale id as a `"Deleted entry"` chip (acceptable, but the id must eventually be removed to keep counts/filters correct).
+  - **On Relation property delete:** remove the property, its values, **and** the paired back-relation property + its values — all in one transaction.
 - `@me` Person default resolves to a concrete `user_id` at entry-creation time.
 
 **Permissions & sharing** ([permissions.md](Features/permissions.md))
@@ -721,7 +753,7 @@ Invariants the database **cannot** express as constraints. Enforce each in a ser
 
 **Templates / files / misc**
 - ≤5 custom templates per workspace; only creator or Admin edits a custom template; entries are never saved in `page_snapshot`. ([templates.md](Features/templates.md))
-- Check the **5 GB** workspace quota before issuing a pre-signed URL; record only on `/confirm`; decrement `bytes_used` only when the orphaned-media job actually deletes the object. ([file-storage.md](Features/file-storage.md))
+- Check the **5 GB** workspace quota before issuing a pre-signed URL; record only on `/confirm`; decrement `bytes_used` only when the orphaned-media job actually deletes the object. **`user_avatar` uploads (`workspace_id = null`) are exempt from the quota** — they are global to the user, not workspace-scoped; all other `file_upload_kind` values are workspace-scoped and counted. ([file-storage.md](Features/file-storage.md))
 - `user_recently_visited`: keep only the latest 10 per (user, workspace). ([navigation.md](Features/navigation.md))
 - `is_platform_admin` is set only in the DB; the Orbit audit log is append-only; impersonation sessions are marked and capped at 2 h. ([admin-panel.md](Features/admin-panel.md))
 
@@ -792,4 +824,22 @@ pnpm run db:generate      # → drizzle/0000_*.sql
 pnpm run db:migrate
 ```
 
-> **Auth caveat (decide first):** point Better Auth's Drizzle adapter at these same tables and reconcile field names. Better Auth's admin/magic-link plugins expect their own column names; either rename the columns in §Auth or map them via Better Auth's field config so the adapter and the migration agree.
+> **Auth ↔ schema mapping (settled — do this before writing any auth code):**
+> Better Auth's Drizzle adapter and its Magic-Link / Admin plugins assume their own
+> table and column names. We keep the snake_case schema above and bridge with the
+> adapter config rather than renaming our tables. Concretely:
+>
+> 1. **Table names:** pass an explicit table map to the adapter so Better Auth's
+>    logical models (`user`, `session`, `account`, `verification`) resolve to our
+>    plural tables (`users`, `sessions`, `accounts`, `verifications`).
+> 2. **Field names:** set `usePlural: true` and `casing: "snake_case"` on the
+>    Drizzle adapter so camelCase model fields map to our snake_case columns; for
+>    any field whose meaning differs (e.g. our `is_platform_admin` vs the Admin
+>    plugin's `role`), add an explicit `fields` override in the plugin/user config.
+> 3. **Admin plugin** expects `banned` / `ban_reason` / `ban_expires` — these exist
+>    on `users` (note our column is `banned_reason`; map it via `fields`).
+> 4. **Verifications** backs magic-link tokens; ensure `identifier` / `value` /
+>    `expires_at` line up with the plugin's expectations (they do, as named).
+>
+> Lock this mapping in `lib/auth/` once and never rename auth columns afterward —
+> changing them after sessions/accounts exist forces a data migration.

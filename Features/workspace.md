@@ -117,6 +117,7 @@ Accessible by Admin only.
 
 **General:**
 - Edit name, icon, URL slug
+- **Default page access for new pages** — `Shared` (visible to all members, the default) or `Private` (visible only to the creator until explicitly shared). Affects only newly created pages; existing pages are unchanged.
 
 **Members:**
 - Invite, manage, remove members
@@ -208,6 +209,7 @@ WorkspaceMember
 8. Email invites expire after 7 days if not accepted.
 9. Users sign in via magic link, which verifies their email on first use — so there is no unverified-account state, and invites entered during the onboarding wizard are sent immediately.
 10. Guest users (invited to specific pages) are not full workspace members and are listed separately.
+11. New pages follow the workspace's **Default Page Access** setting, which is `Shared` by default. Changing it applies only to pages created afterward — existing pages are not modified. Any individual page can still be made private regardless of the workspace default.
 
 ---
 

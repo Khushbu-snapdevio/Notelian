@@ -185,16 +185,16 @@ Each block's content is stored as a `content` JSONB column in the `blocks` table
 
 ```
 Core tables:
-  users, sessions, accounts, verification_tokens
+  users, sessions, accounts, verifications
   workspaces, workspace_members
   pages (covers both pages and database entries)
-  page_versions, blocks
+  page_closure, page_versions, blocks
 
 Database features:
-  databases (extends pages)
   database_views
   database_properties
   property_values
+  (a database is a "pages" row where kind='database' — no separate table)
 
 Sharing:
   page_permissions
@@ -307,4 +307,4 @@ pnpm run worker          # pg-boss — notifications, email digests, cleanup job
 
 ---
 
-*Last updated: 2026-06-08*
+*Last updated: 2026-06-09*

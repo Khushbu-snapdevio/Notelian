@@ -61,10 +61,14 @@ Client                     API Server              S3-compatible storage
 |------------|---------|
 | Page cover image | 5 MB |
 | Page icon (custom image) | 1 MB |
+| User avatar | 1 MB |
+| Workspace icon | 1 MB |
 | Image block | 10 MB |
 | Video block | 50 MB |
 | Audio block | 50 MB |
 | File block | 100 MB |
+
+**User avatars and workspace icons** are image-only (`image/jpeg`, `image/png`, `image/webp`). A **user avatar is global to the user, not workspace-scoped** — it is stored with `workspace_id = null` and **does not count toward any workspace's 5 GB quota**. A **workspace icon is workspace-scoped and counts** toward that workspace's quota like any other upload.
 
 These limits are enforced at the `/api/uploads/sign` step — if the declared size exceeds the limit, the API returns a 400 error before any upload occurs.
 
@@ -139,10 +143,11 @@ Only then is the object removed from storage and the workspace `bytes_used` decr
 ## Object Key Structure
 
 ```
-{workspaceId}/{pageId}/{uuid}.{ext}
+{workspaceId}/{pageId}/{uuid}.{ext}      # workspace-scoped uploads
+users/{userId}/{uuid}.{ext}              # user_avatar (no workspace)
 ```
 
-Example: `wsp_abc123/pg_xyz789/img_k3j9x2a.webp`
+Example: `wsp_abc123/pg_xyz789/img_k3j9x2a.webp` · `users/usr_def456/avatar_k3j9x2a.webp`
 
 - Never publicly guessable — UUIDs are random
 - CDN public URL: `https://cdn.notelian.app/{objectKey}` (served via the CDN in front of the bucket)
@@ -154,13 +159,14 @@ Example: `wsp_abc123/pg_xyz789/img_k3j9x2a.webp`
 ```
 FileUpload
 ├── id                  (uuid, primary key)
-├── workspace_id        (foreign key → Workspace)
+├── workspace_id        (foreign key → Workspace, nullable — null for user_avatar; not quota-counted)
+├── kind                (enum: page_cover | page_icon | block_media | user_avatar | workspace_icon)
 ├── page_id             (foreign key → Page, nullable — for page cover/icon)
 ├── block_id            (foreign key → Block, nullable — for media blocks)
 ├── object_key          (string — storage object key, unique)
 ├── file_url            (string — CDN URL)
 ├── mime_type           (string)
-├── file_size_bytes     (integer)
+├── file_size_bytes     (bigint)
 ├── uploaded_by         (user_id, foreign key)
 ├── confirmed_at        (timestamp, nullable — null until upload confirmed)
 └── created_at          (timestamp)

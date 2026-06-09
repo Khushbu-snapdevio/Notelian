@@ -45,7 +45,7 @@ Assigned per person per page. Controls what they can do on that specific page an
 
 ## Permission Resolution
 
-When checking what a user can do on a page, the system resolves in this order:
+**Private pages short-circuit this:** if `is_private = true`, only the page **creator** and users holding an **explicit `page_permissions` grant** for that page have access. Parent inheritance and the workspace default are **not** consulted, and workspace Admins are denied too (see Private Pages). For all non-private pages, the system resolves in this order:
 
 1. Is the user a workspace **Admin**? → full access to all content (except private pages, see below)
 2. Does the user have an explicit **page-level permission** set? → use that level
@@ -79,6 +79,8 @@ Workspace Admins can set the default for all newly created pages:
 |---------|---------|
 | Private by default | New pages are only visible to the creator until explicitly shared |
 | Shared by default | New pages are visible and editable by all workspace members (Editor+) |
+
+**Shared by default** is the shipped default for new workspaces (`workspaces.default_page_access = 'shared'`); an Admin can switch the workspace to Private by default in Workspace Settings → General.
 
 This setting only affects **newly created pages** — existing pages are not modified.
 

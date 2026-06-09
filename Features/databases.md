@@ -142,7 +142,7 @@ Add filters to show only the entries that match your criteria. Filters are saved
 | Multi-Select | Contains, Does not contain, Is empty, Is not empty |
 | Date | Is, Is before, Is after, Is between, Is empty, Is not empty |
 | Checkbox | Is checked, Is not checked |
-| Person | Is, Is not, Is any of, Includes me, Is empty |
+| Person | Is, Is not, Is any of, Includes me, Is empty, Is not empty |
 | Relation | Contains, Does not contain, Is empty |
 
 **Multiple filters:** Combined with AND (all must match) or OR (any must match). Switch between AND/OR using the logic toggle.

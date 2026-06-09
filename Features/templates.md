@@ -260,10 +260,10 @@ Template
 | Method | Endpoint | Description | Access |
 |--------|----------|-------------|--------|
 | GET | `/api/templates` | List published built-in templates | Authenticated |
-| GET | `/api/workspaces/:id/templates` | List workspace custom templates | Member+ |
-| POST | `/api/workspaces/:id/templates` | Save a page as a template | Editor+ |
-| PATCH | `/api/workspaces/:id/templates/:id` | Update template name / description | Creator or Admin |
-| DELETE | `/api/workspaces/:id/templates/:id` | Delete a custom template | Creator or Admin |
+| GET | `/api/workspaces/:workspaceId/templates` | List workspace custom templates | Member+ |
+| POST | `/api/workspaces/:workspaceId/templates` | Save a page as a template | Editor+ |
+| PATCH | `/api/workspaces/:workspaceId/templates/:templateId` | Update template name / description | Creator or Admin |
+| DELETE | `/api/workspaces/:workspaceId/templates/:templateId` | Delete a custom template | Creator or Admin |
 | POST | `/api/templates/:id/use` | Create a page from a template | Editor+ |
 
 ### Orbit Admin (platform team only)

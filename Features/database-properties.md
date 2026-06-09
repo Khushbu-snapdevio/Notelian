@@ -167,9 +167,9 @@ Creates a bidirectional link between entries across databases (or within the sam
 **Display:** Shows linked entry titles as clickable chips. Click a chip to open that entry.
 
 **Behavior:**
-- Adding a relation on entry A automatically adds A to the back-relation on entry B
-- If the target entry is deleted, the relation chip shows `"Deleted entry"` (link broken)
-- Back-relation property is read-only — cannot be renamed or edited from the target database
+- Adding a relation on entry A automatically adds A to the back-relation on entry B (both sides written in one transaction)
+- If the target entry is deleted, the relation chip shows `"Deleted entry"` (link broken); the deleted entry's id is scrubbed from the other side's relation values by the delete transaction (or the trash-purge job for trashed entries) so counts and filters stay correct
+- Back-relation property is read-only — cannot be renamed or edited from the target database; deleting the source Relation property removes the back-relation and both sides' values in one transaction
 
 **Filters:** Contains (entry), Does not contain, Is empty, Is not empty
 
@@ -229,6 +229,8 @@ They can be used in filters and sorts.
 
 ## Data Model
 
+> **Title is not in this table.** The entry title is `pages.title` (entries are pages) and is surfaced as a virtual position-1 property — see business rule 1. `database_properties` holds only user-created properties plus auto-generated system / back-relation properties.
+
 ```
 DatabaseProperty
 ├── id                  (uuid, primary key)
@@ -284,7 +286,7 @@ PropertyValue
 
 ## Business Rules
 
-1. Every database has a built-in **Title** property that is always visible and cannot be deleted or reordered below position 1.
+1. Every database has a built-in **Title** property that is always visible at column position 1 and cannot be deleted or reordered. **Title is virtual** — it is backed by `pages.title` (each entry is a page), **not** stored as a `database_properties` row or in `property_values`. It does not count toward the 50-property limit, and filters/sorts on Title resolve directly against `pages.title`. Only user-created properties live in `database_properties`.
 2. A database can have a maximum of 50 user-created properties. System properties and back-relation properties do not count toward this limit.
 3. Deleting a property permanently deletes all values for that property across all entries. This cannot be undone.
 4. Property type changes that cannot convert values (e.g., any type → Relation) clear all existing values after confirmation.

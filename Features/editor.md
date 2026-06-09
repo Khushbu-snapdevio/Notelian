@@ -76,6 +76,7 @@ The Notelian editor is block-based — every piece of content is a discrete bloc
 |-------|--------------|-------------|
 | Linked Page | `/page` | Clickable card linking to another page in the workspace |
 | Inline Database | `/database` | Embeds a database view directly inside the page |
+| Template Button | `/template-button` | Inserts a configurable button that clones a predefined block structure on click (see [Templates](./templates.md)) |
 
 ---
 
@@ -254,7 +255,8 @@ Block
 ├── type                (enum: paragraph | h1 | h2 | h3 | bullet | numbered |
 │                        toggle | quote | callout | divider | todo | image |
 │                        video | audio | file | toc | table | columns |
-│                        code | equation | linked_page | database)
+│                        code | equation | linked_page | database |
+│                        template_button)
 ├── content             (jsonb — type-specific content and formatting)
 ├── order_index         (integer — position within parent)
 ├── created_by          (user_id, foreign key)
