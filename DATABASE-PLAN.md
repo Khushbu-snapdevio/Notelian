@@ -1,0 +1,795 @@
+# Notelian — Database Schema (Drizzle ORM)
+
+Every table required across the whole project, as Drizzle models. Built from [README.md](README.md) and all the [Features/](Features/) specs. Drop into `lib/db/schema.ts`.
+
+## Tables at a glance
+
+| Domain | Tables |
+|--------|--------|
+| Auth (Better Auth) | `users`, `sessions`, `accounts`, `verifications` |
+| Workspace | `workspaces`, `workspace_members` |
+| Pages & content | `pages`, `page_closure`, `page_versions`, `blocks` |
+| Databases | `database_views`, `database_properties`, `property_values` |
+| Sharing | `page_permissions`, `public_links`, `guest_invitations` |
+| Collaboration | `comments`, `notifications`, `notification_preferences` |
+| Search | `search_index` |
+| Templates | `templates` |
+| Files | `file_uploads`, `workspace_storage_usage` |
+| Per-user state | `user_preferences`, `user_hint_states`, `user_favorites`, `user_recently_visited` |
+| Platform admin | `platform_audit_log` |
+
+## Key notes
+
+- **Single-table page inheritance:** databases and database entries are rows in `pages`, discriminated by `pages.kind` (`page` / `database` / `entry`). Entries point to their database via `database_id`; databases point to their default view via `default_view_id`. This gives databases/entries every page feature (icon, cover, blocks, comments, versions, permissions, trash) for free.
+- **Closure table** (`page_closure`) backs the page hierarchy so "all descendants" is one query (for permissions, search scope, bulk ops). `pages.parent_id` keeps the immediate parent.
+- **Block content is `jsonb` with `schema_version`** so block shapes can be migrated later.
+- **Inherited permissions are never stored** — resolved at runtime by walking `parent_id` up to the first explicit `page_permissions` row, then `workspaces.default_page_access`.
+- **Search** is Postgres FTS: `search_index.search_vector` (`tsvector`, GIN index) kept current by triggers on blocks/property values/comments.
+- **Deferred FK:** `pages.default_view_id → database_views.id` and `database_views.database_id → pages.id` are circular — add the `default_view_id` constraint in a follow-up migration `ALTER TABLE`.
+- **Page tree order:** `pages.order_index` holds sibling order within a parent (sidebar drag-and-drop, "new pages at the bottom"). The page tree is read as `(parent_id, order_index)`.
+- **Database property visibility:** ordering is shared across all views (`database_properties.order_index`), but show/hide is **per-view** (`database_views.hidden_property_ids`). `database_properties.is_hidden` is only the default at creation.
+- **Soft delete:** pages use `is_deleted` + `deleted_at` (30-day Trash); comments use `deleted_at` (placeholder). Author/creator FKs are `ON DELETE SET NULL` → renders as "Former Member".
+- **pg-boss** owns its own tables (job queue) — not defined here.
+- **`uuid().defaultRandom()`** maps to Postgres `gen_random_uuid()` (built in since PG13 — no extension needed). The `tsvector` GIN index is emitted by `pnpm run db:generate`; the FTS **triggers** that populate `search_vector` are hand-written SQL added to the generated migration.
+
+---
+
+## Imports, custom types, enums
+
+```ts
+// lib/db/schema.ts
+import {
+  pgTable, pgEnum, uuid, text, varchar, boolean, integer, bigint,
+  real, timestamp, jsonb, primaryKey, uniqueIndex, index, customType,
+  type AnyPgColumn,
+} from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
+
+// Postgres full-text search vector (GIN-indexed)
+export const tsvector = customType<{ data: string }>({
+  dataType() { return "tsvector"; },
+});
+
+export const workspaceRole     = pgEnum("workspace_role", ["admin", "editor", "viewer"]);
+export const memberStatus      = pgEnum("member_status", ["active", "invited"]);
+export const defaultPageAccess = pgEnum("default_page_access", ["private", "shared"]);
+
+export const pageKind   = pgEnum("page_kind", ["page", "database", "entry"]);
+export const fontFamily = pgEnum("font_family", ["default", "serif", "mono"]);
+
+export const blockType = pgEnum("block_type", [
+  "paragraph", "h1", "h2", "h3", "bullet", "numbered", "toggle", "quote",
+  "callout", "divider", "todo", "image", "video", "audio", "file",
+  "toc", "table", "columns", "code", "equation", "linked_page",
+  "database", "template_button",
+]);
+
+export const viewType        = pgEnum("view_type", ["table", "board", "calendar", "gallery"]);
+export const galleryCardSize = pgEnum("gallery_card_size", ["small", "medium", "large"]);
+export const entryOpenMode   = pgEnum("entry_open_mode", ["side_panel", "full_page"]);
+
+export const propertyType = pgEnum("property_type", [
+  "text", "number", "select", "multi_select", "date",
+  "checkbox", "url", "email", "phone", "person", "relation",
+]);
+
+export const accessLevel       = pgEnum("access_level", ["full_access", "can_edit", "can_comment", "can_view"]);
+export const publicAccessLevel = pgEnum("public_access_level", ["can_view", "can_comment"]);
+export const guestAccessLevel  = pgEnum("guest_access_level", ["can_view", "can_comment", "can_edit"]);
+
+export const notificationType = pgEnum("notification_type", [
+  "mention", "comment", "reply", "resolved", "reopened",
+  "access_granted", "workspace_invite", "guest_accepted", "trash_warning",
+]);
+export const emailFrequency = pgEnum("email_frequency", ["realtime", "daily", "weekly", "off"]);
+
+export const templateCategory = pgEnum("template_category", ["personal", "productivity", "project_mgmt", "team", "crm"]);
+export const templateStatus   = pgEnum("template_status", ["draft", "published"]);
+
+export const searchSourceType = pgEnum("search_source_type", ["page", "entry", "comment"]);
+export const auditTargetType  = pgEnum("audit_target_type", ["user", "workspace"]);
+```
+
+## Auth (Better Auth: magic link + admin plugin)
+
+```ts
+export const users = pgTable("users", {
+  id:             uuid("id").primaryKey().defaultRandom(),
+  name:           text("name"),
+  email:          text("email").notNull().unique(),
+  emailVerified:  boolean("email_verified").notNull().default(false),
+  image:          text("image"),
+  jobTitle:       text("job_title"),       // optional "Role / Title" from onboarding
+  timezone:       text("timezone"),        // IANA tz for digest delivery
+
+  isPlatformAdmin: boolean("is_platform_admin").notNull().default(false),
+  banned:          boolean("banned").notNull().default(false),
+  bannedReason:    text("banned_reason"),
+  banExpires:      timestamp("ban_expires", { withTimezone: true }),
+
+  onboardingCompleted: boolean("onboarding_completed").notNull().default(false),
+  onboardingStep:      integer("onboarding_step").notNull().default(0),  // 0–4
+  tourCompleted:       boolean("tour_completed").notNull().default(false),
+
+  lastActiveAt: timestamp("last_active_at", { withTimezone: true }),
+  createdAt:    timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:    timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const sessions = pgTable("sessions", {
+  id:             uuid("id").primaryKey().defaultRandom(),
+  userId:         uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  token:          text("token").notNull().unique(),          // hashed
+  expiresAt:      timestamp("expires_at", { withTimezone: true }).notNull(),  // 7-day sliding
+  ipAddress:      text("ip_address"),
+  userAgent:      text("user_agent"),
+  impersonatedBy: uuid("impersonated_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt:      timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:      timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  userIdx: index("sessions_user_idx").on(t.userId),
+}));
+
+// Better Auth core table — unused for credentials in MVP (passwordless), kept for Phase-3 OAuth/SSO.
+export const accounts = pgTable("accounts", {
+  id:           uuid("id").primaryKey().defaultRandom(),
+  userId:       uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  accountId:    text("account_id").notNull(),
+  providerId:   text("provider_id").notNull(),
+  accessToken:  text("access_token"),
+  refreshToken: text("refresh_token"),
+  idToken:      text("id_token"),
+  expiresAt:    timestamp("expires_at", { withTimezone: true }),
+  createdAt:    timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:    timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  userIdx: index("accounts_user_idx").on(t.userId),
+}));
+
+// Magic-link tokens — single-use, 15-min TTL
+export const verifications = pgTable("verifications", {
+  id:         uuid("id").primaryKey().defaultRandom(),
+  identifier: text("identifier").notNull(),   // email
+  value:      text("value").notNull(),        // hashed token
+  expiresAt:  timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt:  timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:  timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  identifierIdx: index("verifications_identifier_idx").on(t.identifier),
+}));
+```
+
+## Workspace
+
+```ts
+export const workspaces = pgTable("workspaces", {
+  id:        uuid("id").primaryKey().defaultRandom(),
+  name:      text("name").notNull(),
+  slug:      text("slug").notNull().unique(),
+  icon:      text("icon"),
+  defaultPageAccess: defaultPageAccess("default_page_access").notNull().default("private"),
+
+  inviteLinkToken:  text("invite_link_token").unique(),
+  inviteLinkActive: boolean("invite_link_active").notNull().default(false),
+  inviteLinkRole:   workspaceRole("invite_link_role").notNull().default("editor"),
+
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// userId is null for pending email invites (account is created on first magic-link sign-in)
+export const workspaceMembers = pgTable("workspace_members", {
+  id:           uuid("id").primaryKey().defaultRandom(),
+  workspaceId:  uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  userId:       uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+  role:         workspaceRole("role").notNull().default("editor"),
+  status:       memberStatus("status").notNull().default("invited"),
+
+  invitedEmail:  text("invited_email"),
+  inviteToken:   text("invite_token").unique(),
+  inviteExpires: timestamp("invite_expires", { withTimezone: true }),  // 7 days
+
+  invitedBy: uuid("invited_by").references(() => users.id, { onDelete: "set null" }),
+  joinedAt:  timestamp("joined_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  uniqUserWorkspace: uniqueIndex("wm_user_workspace_idx").on(t.workspaceId, t.userId),
+  workspaceIdx:      index("wm_workspace_idx").on(t.workspaceId),
+}));
+```
+
+## Pages & content
+
+```ts
+// Universal container: ordinary pages, databases, and database entries (kind discriminates)
+export const pages = pgTable("pages", {
+  id:          uuid("id").primaryKey().defaultRandom(),
+  shortId:     varchar("short_id", { length: 12 }).notNull().unique(),  // 7-char nanoid in URLs
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  parentId:    uuid("parent_id").references((): AnyPgColumn => pages.id, { onDelete: "cascade" }),
+
+  kind:          pageKind("kind").notNull().default("page"),
+  databaseId:    uuid("database_id").references((): AnyPgColumn => pages.id, { onDelete: "cascade" }), // when kind=entry
+  defaultViewId: uuid("default_view_id"),  // when kind=database → database_views.id (deferred FK)
+
+  orderIndex:    integer("order_index").notNull().default(0),  // sibling order in the page tree (drag-and-drop)
+
+  title:         text("title").notNull().default("Untitled"),
+  icon:          text("icon"),
+  coverUrl:      text("cover_url"),
+  coverPosition: real("cover_position").notNull().default(0.5),
+  isFullWidth:   boolean("is_full_width").notNull().default(false),
+  fontFamily:    fontFamily("font_family").notNull().default("default"),
+  isSmallText:   boolean("is_small_text").notNull().default(false),
+
+  isLocked:  boolean("is_locked").notNull().default(false),
+  isPrivate: boolean("is_private").notNull().default(false),
+
+  isDeleted:        boolean("is_deleted").notNull().default(false),
+  deletedAt:        timestamp("deleted_at", { withTimezone: true }),
+  deletedBy:        uuid("deleted_by").references(() => users.id, { onDelete: "set null" }),
+  trashWarningSent: boolean("trash_warning_sent").notNull().default(false),
+
+  createdBy:    uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  lastEditedBy: uuid("last_edited_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt:    timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:    timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  shortIdIdx:   uniqueIndex("pages_short_id_idx").on(t.shortId),
+  workspaceIdx: index("pages_workspace_idx").on(t.workspaceId),
+  parentIdx:    index("pages_parent_order_idx").on(t.parentId, t.orderIndex),
+  databaseIdx:  index("pages_database_idx").on(t.databaseId),
+  liveTreeIdx:  index("pages_live_tree_idx").on(t.workspaceId, t.isDeleted),
+}));
+
+// Closure table — one row per (ancestor, descendant), incl. self at depth 0
+export const pageClosure = pgTable("page_closure", {
+  ancestorId:   uuid("ancestor_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
+  descendantId: uuid("descendant_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
+  depth:        integer("depth").notNull(),
+}, (t) => ({
+  pk:            primaryKey({ columns: [t.ancestorId, t.descendantId] }),
+  descendantIdx: index("page_closure_descendant_idx").on(t.descendantId),
+}));
+
+// Version snapshots — auto-saved, 7-day retention
+export const pageVersions = pgTable("page_versions", {
+  id:              uuid("id").primaryKey().defaultRandom(),
+  pageId:          uuid("page_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
+  contentSnapshot: jsonb("content_snapshot").notNull(),
+  schemaVersion:   integer("schema_version").notNull().default(1),
+  label:           text("label"),
+  createdBy:       uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt:       timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  pageIdx: index("page_versions_page_idx").on(t.pageId, t.createdAt),
+}));
+
+// Every piece of page content; content = jsonb + schema_version
+export const blocks = pgTable("blocks", {
+  id:            uuid("id").primaryKey().defaultRandom(),
+  pageId:        uuid("page_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
+  parentBlockId: uuid("parent_block_id").references((): AnyPgColumn => blocks.id, { onDelete: "cascade" }),
+  type:          blockType("type").notNull(),
+  content:       jsonb("content").notNull(),
+  schemaVersion: integer("schema_version").notNull().default(1),
+  orderIndex:    integer("order_index").notNull(),
+  createdBy:     uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt:     timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:     timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  pageOrderIdx: index("blocks_page_order_idx").on(t.pageId, t.orderIndex),
+  parentIdx:    index("blocks_parent_idx").on(t.parentBlockId),
+}));
+```
+
+## Databases (views, properties, values)
+
+```ts
+export const databaseViews = pgTable("database_views", {
+  id:                 uuid("id").primaryKey().defaultRandom(),
+  databaseId:         uuid("database_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
+  name:               text("name").notNull(),
+  type:               viewType("type").notNull(),
+  groupByPropertyId:  uuid("group_by_property_id").references((): AnyPgColumn => databaseProperties.id, { onDelete: "set null" }),
+  calendarPropertyId: uuid("calendar_property_id").references((): AnyPgColumn => databaseProperties.id, { onDelete: "set null" }),
+  filters:            jsonb("filters").notNull().default(sql`'[]'::jsonb`),
+  sorts:              jsonb("sorts").notNull().default(sql`'[]'::jsonb`),    // max 5
+  cardDisplayProps:   jsonb("card_display_props").notNull().default(sql`'[]'::jsonb`),
+  hiddenPropertyIds:  jsonb("hidden_property_ids").notNull().default(sql`'[]'::jsonb`), // per-view visibility (rules 9–10)
+  galleryCardSize:    galleryCardSize("gallery_card_size"),
+  entryOpenMode:      entryOpenMode("entry_open_mode").notNull().default("side_panel"),
+  orderIndex:         integer("order_index").notNull().default(0),
+  createdAt:          timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:          timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  databaseIdx: index("database_views_database_idx").on(t.databaseId),
+}));
+
+// Typed columns; max 50 user-created per db (system + back-relation excluded — enforce in app)
+export const databaseProperties = pgTable("database_properties", {
+  id:             uuid("id").primaryKey().defaultRandom(),
+  databaseId:     uuid("database_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
+  name:           text("name").notNull(),
+  type:           propertyType("type").notNull(),
+  config:         jsonb("config").notNull().default(sql`'{}'::jsonb`),  // format / options / target db / etc.
+  defaultValue:   jsonb("default_value"),
+  isHidden:       boolean("is_hidden").notNull().default(false),  // default visibility; per-view override → database_views.hiddenPropertyIds
+  isSystem:       boolean("is_system").notNull().default(false),
+  isBackRelation: boolean("is_back_relation").notNull().default(false),
+  orderIndex:     integer("order_index").notNull().default(0),
+  createdAt:      timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:      timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  databaseIdx: index("database_properties_database_idx").on(t.databaseId),
+}));
+
+// One value per (entry, property); entry_id = a page with kind='entry'
+export const propertyValues = pgTable("property_values", {
+  id:         uuid("id").primaryKey().defaultRandom(),
+  entryId:    uuid("entry_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
+  propertyId: uuid("property_id").notNull().references(() => databaseProperties.id, { onDelete: "cascade" }),
+  value:      jsonb("value"),
+  updatedAt:  timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  uniqEntryProp: uniqueIndex("property_values_entry_prop_idx").on(t.entryId, t.propertyId),
+  propertyIdx:   index("property_values_property_idx").on(t.propertyId),
+}));
+```
+
+## Sharing & permissions
+
+```ts
+export const pagePermissions = pgTable("page_permissions", {
+  id:          uuid("id").primaryKey().defaultRandom(),
+  pageId:      uuid("page_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
+  userId:      uuid("user_id").references(() => users.id, { onDelete: "cascade" }),  // null if guest-by-email
+  guestEmail:  text("guest_email"),
+  accessLevel: accessLevel("access_level").notNull(),
+  grantedBy:   uuid("granted_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt:   timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:   timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  pageIdx:       index("page_permissions_page_idx").on(t.pageId),
+  uniqPageUser:  uniqueIndex("page_permissions_page_user_idx").on(t.pageId, t.userId),
+  uniqPageGuest: uniqueIndex("page_permissions_page_guest_idx").on(t.pageId, t.guestEmail),
+}));
+
+export const publicLinks = pgTable("public_links", {
+  id:          uuid("id").primaryKey().defaultRandom(),
+  pageId:      uuid("page_id").notNull().unique().references(() => pages.id, { onDelete: "cascade" }),
+  token:       text("token").notNull().unique(),
+  accessLevel: publicAccessLevel("access_level").notNull().default("can_view"),
+  isActive:    boolean("is_active").notNull().default(false),
+  createdBy:   uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt:   timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:   timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const guestInvitations = pgTable("guest_invitations", {
+  id:          uuid("id").primaryKey().defaultRandom(),
+  pageId:      uuid("page_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  email:       text("email").notNull(),
+  accessLevel: guestAccessLevel("access_level").notNull(),
+  token:       text("token").notNull().unique(),
+  expiresAt:   timestamp("expires_at", { withTimezone: true }).notNull(),  // 7 days
+  acceptedAt:  timestamp("accepted_at", { withTimezone: true }),
+  invitedBy:   uuid("invited_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt:   timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  pageIdx:  index("guest_invitations_page_idx").on(t.pageId),
+  tokenIdx: uniqueIndex("guest_invitations_token_idx").on(t.token),
+}));
+```
+
+## Collaboration
+
+```ts
+// Block / text-level / page-level comments; one reply level deep
+export const comments = pgTable("comments", {
+  id:           uuid("id").primaryKey().defaultRandom(),
+  pageId:       uuid("page_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
+  blockId:      uuid("block_id").references(() => blocks.id, { onDelete: "set null" }),  // null = page-level
+  parentId:     uuid("parent_id").references((): AnyPgColumn => comments.id, { onDelete: "cascade" }),
+  anchorStart:  integer("anchor_start"),   // text-level offsets
+  anchorEnd:    integer("anchor_end"),
+  threadNumber: integer("thread_number"),  // per-page reference (#3)
+  isResolved:   boolean("is_resolved").notNull().default(false),
+  isOrphaned:   boolean("is_orphaned").notNull().default(false),
+  authorId:     uuid("author_id").references(() => users.id, { onDelete: "set null" }),
+  content:      jsonb("content").notNull(),
+  createdAt:    timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  editedAt:     timestamp("edited_at", { withTimezone: true }),
+  deletedAt:    timestamp("deleted_at", { withTimezone: true }),  // soft delete → "[Comment deleted]"
+}, (t) => ({
+  pageIdx:   index("comments_page_idx").on(t.pageId),
+  blockIdx:  index("comments_block_idx").on(t.blockId),
+  parentIdx: index("comments_parent_idx").on(t.parentId),
+}));
+
+// 90-day retention
+export const notifications = pgTable("notifications", {
+  id:             uuid("id").primaryKey().defaultRandom(),
+  workspaceId:    uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  recipientId:    uuid("recipient_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  senderId:       uuid("sender_id").references(() => users.id, { onDelete: "set null" }),  // null = system
+  type:           notificationType("type").notNull(),
+  pageId:         uuid("page_id").references(() => pages.id, { onDelete: "cascade" }),
+  sourceId:       uuid("source_id"),
+  contentSnippet: text("content_snippet"),
+  isRead:         boolean("is_read").notNull().default(false),
+  readAt:         timestamp("read_at", { withTimezone: true }),
+  createdAt:      timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  recipientUnreadIdx: index("notifications_recipient_unread_idx").on(t.recipientId, t.isRead),
+  createdIdx:         index("notifications_created_idx").on(t.createdAt),
+}));
+
+export const notificationPreferences = pgTable("notification_preferences", {
+  id:              uuid("id").primaryKey().defaultRandom(),
+  userId:          uuid("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  emailFrequency:  emailFrequency("email_frequency").notNull().default("daily"),
+  weeklyDigestDay: integer("weekly_digest_day").notNull().default(1),  // 0=Sun … 6=Sat
+  updatedAt:       timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+```
+
+## Search
+
+```ts
+export const searchIndex = pgTable("search_index", {
+  id:           uuid("id").primaryKey().defaultRandom(),
+  workspaceId:  uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  sourceType:   searchSourceType("source_type").notNull(),
+  sourceId:     uuid("source_id").notNull(),
+  title:        text("title"),
+  searchVector: tsvector("search_vector"),  // weighted A/B/C/D
+  pageId:       uuid("page_id").notNull().references(() => pages.id, { onDelete: "cascade" }),  // permission scoping
+  updatedAt:    timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  uniqSource:   uniqueIndex("search_index_source_idx").on(t.sourceType, t.sourceId),
+  workspaceIdx: index("search_index_workspace_idx").on(t.workspaceId),
+  vectorIdx:    index("search_index_vector_idx").using("gin", t.searchVector),
+}));
+```
+
+## Templates, files, per-user state, platform admin
+
+```ts
+// Built-in (workspace_id NULL) + custom (workspace-scoped)
+export const templates = pgTable("templates", {
+  id:           uuid("id").primaryKey().defaultRandom(),
+  workspaceId:  uuid("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }),
+  name:         text("name").notNull(),
+  description:  text("description"),
+  category:     templateCategory("category").notNull(),
+  isBuiltIn:    boolean("is_built_in").notNull().default(false),
+  status:       templateStatus("status").notNull().default("published"),
+  createdBy:    uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  pageSnapshot: jsonb("page_snapshot").notNull(),  // blocks + structure, no entries
+  createdAt:    timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:    timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  workspaceIdx: index("templates_workspace_idx").on(t.workspaceId),
+}));
+
+export const fileUploads = pgTable("file_uploads", {
+  id:            uuid("id").primaryKey().defaultRandom(),
+  workspaceId:   uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  pageId:        uuid("page_id").references(() => pages.id, { onDelete: "set null" }),
+  blockId:       uuid("block_id").references(() => blocks.id, { onDelete: "set null" }),
+  objectKey:     text("object_key").notNull().unique(),  // {workspaceId}/{pageId}/{uuid}.{ext}
+  fileUrl:       text("file_url").notNull(),             // CDN URL
+  mimeType:      text("mime_type").notNull(),
+  fileSizeBytes: bigint("file_size_bytes", { mode: "number" }).notNull(),
+  uploadedBy:    uuid("uploaded_by").references(() => users.id, { onDelete: "set null" }),
+  confirmedAt:   timestamp("confirmed_at", { withTimezone: true }),  // null until /confirm
+  createdAt:     timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  workspaceIdx: index("file_uploads_workspace_idx").on(t.workspaceId),
+  objectKeyIdx: uniqueIndex("file_uploads_object_key_idx").on(t.objectKey),
+  confirmedIdx: index("file_uploads_confirmed_idx").on(t.confirmedAt),
+}));
+
+// 1:1 with workspace — 5 GB quota
+export const workspaceStorageUsage = pgTable("workspace_storage_usage", {
+  workspaceId: uuid("workspace_id").primaryKey().references(() => workspaces.id, { onDelete: "cascade" }),
+  bytesUsed:   bigint("bytes_used", { mode: "number" }).notNull().default(0),
+  updatedAt:   timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const userPreferences = pgTable("user_preferences", {
+  id:               uuid("id").primaryKey().defaultRandom(),
+  userId:           uuid("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  lastWorkspaceId:  uuid("last_workspace_id").references(() => workspaces.id, { onDelete: "set null" }),
+  sidebarWidth:     integer("sidebar_width").notNull().default(240),  // 200–480
+  sidebarCollapsed: boolean("sidebar_collapsed").notNull().default(false),
+  updatedAt:        timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const userHintStates = pgTable("user_hint_states", {
+  id:          uuid("id").primaryKey().defaultRandom(),
+  userId:      uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  hintKey:     text("hint_key").notNull(),
+  dismissedAt: timestamp("dismissed_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  uniqUserHint: uniqueIndex("user_hint_states_user_hint_idx").on(t.userId, t.hintKey),
+}));
+
+export const userFavorites = pgTable("user_favorites", {
+  id:          uuid("id").primaryKey().defaultRandom(),
+  userId:      uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  pageId:      uuid("page_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  orderIndex:  integer("order_index").notNull().default(0),
+  createdAt:   timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  uniqUserPage:     uniqueIndex("user_favorites_user_page_idx").on(t.userId, t.pageId),
+  userWorkspaceIdx: index("user_favorites_user_workspace_idx").on(t.userId, t.workspaceId),
+}));
+
+// Upsert on revisit; app keeps only latest 10 per (user, workspace)
+export const userRecentlyVisited = pgTable("user_recently_visited", {
+  id:          uuid("id").primaryKey().defaultRandom(),
+  userId:      uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  pageId:      uuid("page_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
+  visitedAt:   timestamp("visited_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  uniqUserPage: uniqueIndex("urv_user_page_idx").on(t.userId, t.pageId),
+  recentIdx:    index("urv_recent_idx").on(t.userId, t.workspaceId, t.visitedAt),
+}));
+
+// Append-only Orbit Admin trail
+export const platformAuditLog = pgTable("platform_audit_log", {
+  id:         uuid("id").primaryKey().defaultRandom(),
+  actorId:    uuid("actor_id").references(() => users.id, { onDelete: "set null" }),
+  action:     text("action").notNull(),  // "user.banned", "session.impersonated", ...
+  targetType: auditTargetType("target_type").notNull(),
+  targetId:   uuid("target_id"),
+  metadata:   jsonb("metadata"),
+  createdAt:  timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  actorIdx:   index("platform_audit_log_actor_idx").on(t.actorId),
+  createdIdx: index("platform_audit_log_created_idx").on(t.createdAt),
+}));
+```
+
+## Relations (core graph)
+
+```ts
+export const usersRelations = relations(users, ({ one, many }) => ({
+  sessions:          many(sessions),
+  memberships:       many(workspaceMembers),
+  notificationPrefs: one(notificationPreferences),
+  preferences:       one(userPreferences),
+  favorites:         many(userFavorites),
+}));
+
+export const workspacesRelations = relations(workspaces, ({ one, many }) => ({
+  creator:      one(users, { fields: [workspaces.createdBy], references: [users.id] }),
+  members:      many(workspaceMembers),
+  pages:        many(pages),
+  templates:    many(templates),
+  storageUsage: one(workspaceStorageUsage),
+}));
+
+export const workspaceMembersRelations = relations(workspaceMembers, ({ one }) => ({
+  workspace: one(workspaces, { fields: [workspaceMembers.workspaceId], references: [workspaces.id] }),
+  user:      one(users, { fields: [workspaceMembers.userId], references: [users.id] }),
+}));
+
+export const pagesRelations = relations(pages, ({ one, many }) => ({
+  workspace:      one(workspaces, { fields: [pages.workspaceId], references: [workspaces.id] }),
+  parent:         one(pages, { relationName: "page_parent", fields: [pages.parentId], references: [pages.id] }),
+  children:       many(pages, { relationName: "page_parent" }),
+  database:       one(pages, { relationName: "entry_database", fields: [pages.databaseId], references: [pages.id] }),
+  entries:        many(pages, { relationName: "entry_database" }),
+  defaultView:    one(databaseViews, { fields: [pages.defaultViewId], references: [databaseViews.id] }),
+  creator:        one(users, { fields: [pages.createdBy], references: [users.id] }),
+  blocks:         many(blocks),
+  versions:       many(pageVersions),
+  views:          many(databaseViews),
+  properties:     many(databaseProperties),
+  propertyValues: many(propertyValues),
+  permissions:    many(pagePermissions),
+  publicLink:     one(publicLinks),
+  comments:       many(comments),
+  files:          many(fileUploads),
+}));
+
+export const blocksRelations = relations(blocks, ({ one, many }) => ({
+  page:        one(pages, { fields: [blocks.pageId], references: [pages.id] }),
+  parentBlock: one(blocks, { relationName: "block_parent", fields: [blocks.parentBlockId], references: [blocks.id] }),
+  children:    many(blocks, { relationName: "block_parent" }),
+  comments:    many(comments),
+}));
+
+export const databaseViewsRelations = relations(databaseViews, ({ one }) => ({
+  database:         one(pages, { fields: [databaseViews.databaseId], references: [pages.id] }),
+  groupByProperty:  one(databaseProperties, { relationName: "view_group", fields: [databaseViews.groupByPropertyId], references: [databaseProperties.id] }),
+  calendarProperty: one(databaseProperties, { relationName: "view_calendar", fields: [databaseViews.calendarPropertyId], references: [databaseProperties.id] }),
+}));
+
+export const databasePropertiesRelations = relations(databaseProperties, ({ one, many }) => ({
+  database: one(pages, { fields: [databaseProperties.databaseId], references: [pages.id] }),
+  values:   many(propertyValues),
+}));
+
+export const propertyValuesRelations = relations(propertyValues, ({ one }) => ({
+  entry:    one(pages, { fields: [propertyValues.entryId], references: [pages.id] }),
+  property: one(databaseProperties, { fields: [propertyValues.propertyId], references: [databaseProperties.id] }),
+}));
+
+export const commentsRelations = relations(comments, ({ one, many }) => ({
+  page:    one(pages, { fields: [comments.pageId], references: [pages.id] }),
+  block:   one(blocks, { fields: [comments.blockId], references: [blocks.id] }),
+  parent:  one(comments, { relationName: "comment_thread", fields: [comments.parentId], references: [comments.id] }),
+  replies: many(comments, { relationName: "comment_thread" }),
+  author:  one(users, { fields: [comments.authorId], references: [users.id] }),
+}));
+
+export const notificationsRelations = relations(notifications, ({ one }) => ({
+  workspace: one(workspaces, { fields: [notifications.workspaceId], references: [workspaces.id] }),
+  recipient: one(users, { relationName: "notif_recipient", fields: [notifications.recipientId], references: [users.id] }),
+  sender:    one(users, { relationName: "notif_sender", fields: [notifications.senderId], references: [users.id] }),
+  page:      one(pages, { fields: [notifications.pageId], references: [pages.id] }),
+}));
+```
+
+## Inferred types
+
+Export row types straight off the tables — use these in queries and service signatures instead of re-declaring shapes:
+
+```ts
+export type User              = typeof users.$inferSelect;
+export type NewUser           = typeof users.$inferInsert;
+export type Workspace         = typeof workspaces.$inferSelect;
+export type WorkspaceMember   = typeof workspaceMembers.$inferSelect;
+export type Page              = typeof pages.$inferSelect;
+export type NewPage           = typeof pages.$inferInsert;
+export type Block             = typeof blocks.$inferSelect;
+export type DatabaseView      = typeof databaseViews.$inferSelect;
+export type DatabaseProperty  = typeof databaseProperties.$inferSelect;
+export type PropertyValue     = typeof propertyValues.$inferSelect;
+export type PagePermission    = typeof pagePermissions.$inferSelect;
+export type Comment           = typeof comments.$inferSelect;
+export type Notification      = typeof notifications.$inferSelect;
+export type Template          = typeof templates.$inferSelect;
+export type FileUpload        = typeof fileUploads.$inferSelect;
+// …extend per table as needed
+```
+
+---
+
+## Application-layer rules to enforce
+
+Invariants the database **cannot** express as constraints. Enforce each in a service/transaction; they are pulled from the feature specs and are easy to forget once the schema exists.
+
+**Auth & account** ([authentication.md](Features/authentication.md))
+- Magic-link tokens are single-use and expire after 15 min; invalidate immediately on use.
+- A banned user's sessions are revoked immediately; block re-auth until unbanned.
+- A user cannot delete their account while sole `admin` of any workspace — require transfer first.
+- Magic-link requests always return the same response whether or not the email exists (no enumeration).
+
+**Workspace** ([workspace.md](Features/workspace.md))
+- Exactly **one** `admin` (owner) per workspace at all times.
+- `admin` role is assigned only via Transfer Ownership — never the role dropdown; admin can't be removed directly.
+- Every user must belong to ≥1 workspace after onboarding (guests excepted).
+- Email invites expire after 7 days; invite-link joins default to `editor`.
+
+**Pages & editor** ([pages.md](Features/pages.md), [editor.md](Features/editor.md))
+- Title is never empty — default to `"Untitled"`.
+- Delete → soft-delete to Trash; subpages cascade to Trash with the parent; permanent purge after 30 days.
+- **Maintain `page_closure`** on every create / move / delete (insert self at depth 0; rebuild descendant rows on move).
+- Duplicate copies blocks/subpages/icon/cover but **not** permissions or comments.
+- Move inherits the new parent's permissions unless the page already has custom permissions.
+- A locked page is read-only for everyone (incl. Admin); only Full Access can lock/unlock.
+- Auto-save debounce ~1 s; one `page_versions` snapshot per 10-min window per user.
+
+**Databases & properties** ([databases.md](Features/databases.md), [database-properties.md](Features/database-properties.md))
+- A database must keep ≥1 view — the last view cannot be deleted.
+- Board view requires a Select property to group by; Calendar requires a Date property.
+- Built-in **Title** property is always position 1 and undeletable.
+- Max **50 user-created properties** per database (system + back-relation properties excluded).
+- Deleting a property deletes all its `property_values`; deleting a Select option clears it from all entries.
+- Relation properties are **bidirectional** — writing A→B also writes the back-relation B→A; back-relations are auto-created and read-only.
+- `@me` Person default resolves to a concrete `user_id` at entry-creation time.
+
+**Permissions & sharing** ([permissions.md](Features/permissions.md))
+- Workspace role is the **ceiling** — page permissions can restrict but never exceed it (a Viewer can only ever be Can View).
+- Private pages are hidden from everyone else **including Admins** (sidebar, search, links).
+- Resolve effective permission in a single recursive CTE; filter restricted rows in SQL, never after fetch.
+- Disabling a public link revokes access; re-enabling generates a **new** token (old URL dead forever).
+- Guest invitations expire after 7 days; guests reach only the invited page(s).
+
+**Comments** ([comments.md](Features/comments.md))
+- Replies are one level deep only.
+- Only the author edits; author or Admin deletes. Deleting a thread-root with replies leaves a `"[Comment deleted]"` placeholder (soft delete); with no replies, remove the thread.
+- @mention notifications fire once at mention time — not again on edit.
+
+**Notifications** ([notifications.md](Features/notifications.md))
+- Enqueue transactionally — only if the triggering write committed.
+- Never notify a user of their own action.
+- Digests include only **unread** items; skip empty digests; purge after 90 days; retry failed sends 3×.
+
+**Search** ([search.md](Features/search.md))
+- Filter every result by the caller's effective permission; never surface other users' private or trashed pages.
+- Scope to a single workspace; cap at 50 results.
+
+**Templates / files / misc**
+- ≤5 custom templates per workspace; only creator or Admin edits a custom template; entries are never saved in `page_snapshot`. ([templates.md](Features/templates.md))
+- Check the **5 GB** workspace quota before issuing a pre-signed URL; record only on `/confirm`; decrement `bytes_used` only when the orphaned-media job actually deletes the object. ([file-storage.md](Features/file-storage.md))
+- `user_recently_visited`: keep only the latest 10 per (user, workspace). ([navigation.md](Features/navigation.md))
+- `is_platform_admin` is set only in the DB; the Orbit audit log is append-only; impersonation sessions are marked and capped at 2 h. ([admin-panel.md](Features/admin-panel.md))
+
+---
+
+## Project setup to start development
+
+These three pieces make the schema runnable. Not part of `schema.ts` — they live in their own files.
+
+**1. Dependencies** (`pnpm add` / `pnpm add -D`)
+
+```jsonc
+// package.json (relevant entries)
+{
+  "scripts": {
+    "db:generate": "drizzle-kit generate",   // build migration SQL from schema.ts
+    "db:migrate":  "drizzle-kit migrate",     // apply pending migrations
+    "db:studio":   "drizzle-kit studio"       // browse data
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.36.0",
+    "postgres":    "^3.4.0",                  // postgres.js driver
+    "better-auth": "^1.2.0"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.28.0"
+  }
+}
+```
+
+**2. `drizzle.config.ts`** (repo root)
+
+```ts
+import { defineConfig } from "drizzle-kit";
+
+export default defineConfig({
+  schema: "./lib/db/schema.ts",
+  out: "./drizzle",
+  dialect: "postgresql",
+  dbCredentials: { url: process.env.DATABASE_URL! },
+  casing: "snake_case",   // camelCase TS → snake_case columns
+  verbose: true,
+  strict: true,
+});
+```
+
+**3. `lib/db/index.ts`** — the client
+
+```ts
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
+import * as schema from "./schema";
+
+const client = postgres(process.env.DATABASE_URL!, { prepare: false });
+export const db = drizzle(client, { schema, casing: "snake_case" });
+```
+
+**First run**
+
+```bash
+pnpm run db:generate      # → drizzle/0000_*.sql
+# then, in that generated SQL, add by hand:
+#   • ALTER TABLE pages ADD CONSTRAINT pages_default_view_fk
+#       FOREIGN KEY (default_view_id) REFERENCES database_views(id) ON DELETE SET NULL;
+#   • GIN index on search_index.search_vector (if not emitted)
+#   • FTS triggers populating search_vector on blocks / property_values / comments
+#   • page_closure maintenance (or handle in app transactions)
+pnpm run db:migrate
+```
+
+> **Auth caveat (decide first):** point Better Auth's Drizzle adapter at these same tables and reconcile field names. Better Auth's admin/magic-link plugins expect their own column names; either rename the columns in §Auth or map them via Better Auth's field config so the adapter and the migration agree.
