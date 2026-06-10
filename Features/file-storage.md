@@ -38,9 +38,9 @@ Client                     API Server              S3-compatible storage
 
 | Method | Endpoint | Description | Access |
 |--------|----------|-------------|--------|
-| POST | `/api/uploads/sign` | Request a pre-signed PUT URL | Authenticated member |
-| POST | `/api/uploads/confirm` | Confirm upload complete, record usage | Authenticated member |
-| DELETE | `/api/uploads/:objectKey` | Delete a stored file | System (orphaned-media cleanup job) |
+| POST | `/api/uploads/sign` | Request a pre-signed PUT URL; enforces per-type size limits and workspace quota before issuing | Authenticated member |
+| POST | `/api/uploads/confirm` | Confirm upload complete, verify object exists, record usage | Authenticated member |
+| DELETE | `/api/uploads/:objectKey` | Delete a stored file — **called only by pg-boss cleanup jobs, never by end-user actions**; a block delete does not trigger this endpoint (files are preserved for undo + Version History) | System (cleanup jobs only) |
 
 ---
 
@@ -127,7 +127,7 @@ Files are deleted from storage when:
 | Workspace deleted | Delete all workspace files from storage; usage record dropped |
 | Upload aborted / not confirmed within 30 minutes | Object is cleaned up by a pg-boss job (stale upload cleanup) |
 
-Deletes from storage are async — queued as a pg-boss job so the UI is not blocked.
+Deletes from storage are **always async via pg-boss** — the UI reflects block deletion immediately, but storage cleanup happens in the background. File bytes are **never** deleted synchronously from the editor.
 
 ### Orphaned-media cleanup
 

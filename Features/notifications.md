@@ -203,17 +203,39 @@ Phase 1: global frequency setting only. Granular per-event-type control is a Pha
 All notification jobs are managed by **pg-boss** within the same PostgreSQL database:
 
 - Notification writes are **transactional** — if the triggering event (comment, @mention) fails to save, no notification is enqueued
-- Failed delivery jobs retry up to **3 times** with exponential backoff (1min, 5min, 25min)
-- Failed jobs after 3 retries are logged to the error monitoring system
 - Email sending uses **Nodemailer** via SMTP — configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, and `SMTP_SECURE`
+- All email jobs must be idempotent (pg-boss is at-least-once); use the outbox pattern below
+
+### Email Delivery — Outbox Pattern
+
+Email delivery uses an `email_outbox` table to guarantee idempotency across pg-boss retries:
+
+```
+email_outbox
+├── id              (uuid, primary key — used as SMTP Message-ID for dedup)
+├── recipient_email (string)
+├── subject         (string)
+├── html_body       (text)
+├── type            (enum: notification_email | digest_email)
+├── status          (enum: queued | sending | sent | failed)
+├── attempt_count   (integer, default: 0)
+├── last_error      (string, nullable)
+├── created_at      (timestamp)
+└── updated_at      (timestamp)
+```
+
+**State machine:** `queued → sending → sent` (terminal). The worker atomically transitions `queued → sending` before calling SMTP; on success flips to `sent`; on failure increments `attempt_count` and reverts to `queued` for retry. A nightly reaper sweeps rows stuck in `sending` > 10 minutes → `failed`. Never resend a `failed` row automatically — log and let an operator decide.
+
+**Idempotency:** The outbox row `id` is passed as the SMTP `Message-ID` header. If the same job fires twice, the second run finds `status='sending'` or `status='sent'` and short-circuits without sending a duplicate email.
 
 ### Background Jobs (pg-boss)
 
-| Job | Schedule | Description |
-|-----|----------|-------------|
-| `send-notification-email` | On event / scheduled | Deliver per-event notification emails (real-time frequency); retries up to 3× with exponential backoff |
-| `send-email-digest` | Daily 08:00 (user TZ) / weekly | Send the daily or weekly digest of unread notifications |
-| `cleanup-old-notifications` | Nightly | Permanently delete notifications older than 90 days |
+| Job | Schedule | `retryLimit` | Description |
+|-----|----------|-------------|-------------|
+| `send-notification-email` | On event | 3 (60s / 300s / 1500s backoff) | Enqueue into `email_outbox`, then send via SMTP; outbox row tracks state |
+| `send-email-digest` | Daily 08:00 (user TZ) / weekly | 2 | Collect unread notifications, build digest, enqueue into `email_outbox` |
+| `cleanup-old-notifications` | Nightly | 2 | Permanently delete notifications older than 90 days |
+| `cleanup-email-outbox` | Nightly | 1 | Sweep `sending` rows stuck > 10 min → `failed`; delete `sent` rows older than 30 days |
 
 ---
 
@@ -277,7 +299,8 @@ NotificationPreference
 6. Notification retention is 90 days. Notifications older than 90 days are permanently deleted.
 7. Changing email frequency takes effect from the next scheduled delivery cycle.
 8. Real-time SSE delivery is best-effort. The client auto-reconnects on connection drop and falls back to polling `GET /api/notifications` if the stream is unavailable; notifications are always available in the Notification Center regardless of SSE delivery status.
-9. Failed email delivery jobs retry up to 3 times before being logged as failed.
+9. Email delivery uses the `email_outbox` outbox pattern — the outbox row `id` is the SMTP `Message-ID`, providing provider-level dedup. A `failed` row is never automatically resent; an operator must inspect and re-queue manually.
+10. The `cleanup-email-outbox` job sweeps rows stuck in `sending` > 10 minutes to `failed` and purges `sent` rows older than 30 days. Never delete a `failed` row without operator sign-off.
 
 ---
 
