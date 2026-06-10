@@ -168,7 +168,7 @@ Creates a bidirectional link between entries across databases (or within the sam
 
 **Behavior:**
 - Adding a relation on entry A automatically adds A to the back-relation on entry B (both sides written in one transaction)
-- If the target entry is deleted, the relation chip shows `"Deleted entry"` (link broken); the deleted entry's id is scrubbed from the other side's relation values by the delete transaction (or the `auto-delete-expired-trash` job for trashed entries) so counts and filters stay correct
+- If the target entry is **permanently deleted** (hard delete), the delete transaction must also scrub the entry's id from all `property_values` rows of type `relation` across all databases — both sides are cleaned in the same atomic transaction so counts and filters stay correct. If the target entry is **trashed** (soft-deleted), the relation chip shows `"Entry in Trash"` instead; the id is scrubbed only when `auto-delete-expired-trash` permanently removes the entry (same logic as hard delete, executed in the job's transaction)
 - Back-relation property is read-only — cannot be renamed or edited from the target database; deleting the source Relation property removes the back-relation and both sides' values in one transaction
 
 **Filters:** Contains (entry), Does not contain, Is empty, Is not empty
@@ -245,7 +245,12 @@ DatabaseProperty
 │                        relation: { target_database_id, back_relation_id }
 │                        person: { allow_multiple })
 ├── default_value       (jsonb, nullable)
-├── is_hidden           (boolean, default: false)
+├── is_hidden           (boolean, default: false — default visibility at property creation;
+│                        per-view override stored in database_views.hidden_property_ids)
+├── is_system           (boolean, default: false — true for Created Time, Last Edited Time,
+│                        Created By, Last Edited By; system properties don't count toward the 50 limit)
+├── is_back_relation    (boolean, default: false — true for auto-created reverse side of a
+│                        Relation property; back-relations are read-only and don't count toward the limit)
 ├── order_index         (integer)
 ├── created_at          (timestamp)
 └── updated_at          (timestamp)
@@ -289,9 +294,9 @@ PropertyValue
 1. Every database has a built-in **Title** property that is always visible at column position 1 and cannot be deleted or reordered. **Title is virtual** — it is backed by `pages.title` (each entry is a page), **not** stored as a `database_properties` row or in `property_values`. It does not count toward the 50-property limit, and filters/sorts on Title resolve directly against `pages.title`. Only user-created properties live in `database_properties`.
 2. A database can have a maximum of 50 user-created properties. System properties and back-relation properties do not count toward this limit.
 3. Deleting a property permanently deletes all values for that property across all entries. This cannot be undone.
-4. Property type changes that cannot convert values (e.g., any type → Relation) clear all existing values after confirmation.
+4. Property type changes that cannot convert values (e.g., any type → Relation, any type → Person) clear all existing values, but only after explicit user confirmation. **API + UX flow:** the initial `PATCH /api/databases/:id/properties/:propId` with a destructive new type (where `affectedValueCount > 0`) returns `400 { error: "destructive_conversion", affectedValueCount: N }`. The UI shows a confirmation dialog: *"Changing to [type] will permanently delete N existing values. This cannot be undone."* with a **Delete N values and change type** button. Re-sending the request with `{ confirmDestructive: true }` executes the type change and `DELETE FROM property_values WHERE property_id = :propId` in a **single atomic transaction**. If `affectedValueCount = 0`, the type change proceeds without a confirmation step.
 5. Back-relation properties are auto-created and read-only — they cannot be renamed, reordered, or deleted directly. Deleting the source Relation property removes the back-relation too.
-6. The `@me` default for Person properties resolves at entry creation time — it is stored as the actual user ID, not as a dynamic reference.
+6. The `@me` default for Person properties resolves at entry creation time — it is stored as the actual user ID, not as a dynamic reference. **Resolution happens exclusively server-side** in the entry creation handler (`POST /api/databases/:id/entries` or the equivalent server action): the handler reads the property's `default_value` config, substitutes `@me` with the authenticated session's `user_id`, and writes the concrete UUID to `property_values`. Client code must never resolve `@me` — only the server resolves it using the verified session identity.
 7. Select option deletion removes that value from all entries holding it. The deleted option cannot be recovered.
 8. System properties (Created Time, Last Edited Time, Created By, Last Edited By) are always present and cannot be modified.
 9. Hidden properties are hidden per-view — they still store and accept values.

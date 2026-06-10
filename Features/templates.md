@@ -246,10 +246,40 @@ Template
 ├── is_built_in         (boolean, default: false)
 ├── status              (enum: draft | published — built-in only; custom templates are always published)
 ├── created_by          (user_id, nullable — null for built-in)
-├── page_snapshot       (jsonb — full serialized page blocks and structure)
+├── page_snapshot       (jsonb — serialized page structure; see shape below)
 ├── created_at          (timestamp)
 └── updated_at          (timestamp)
 ```
+
+**`page_snapshot` JSONB shape:**
+
+```jsonc
+{
+  "title": "Meeting Notes",           // string — page title to use for new pages from this template
+  "icon": "📝",                       // string | null — emoji or image URL
+  "cover_url": null,                  // string | null
+  "is_full_width": false,
+  "font_family": "default",
+  "blocks": [                         // array of block descriptors (top-level blocks only)
+    {
+      "id": "<stable-template-uuid>", // stable UUID within the snapshot (for child references)
+      "type": "h1",
+      "content": { "text": [{ "text": "Agenda", "marks": [] }] },
+      "schema_version": 1,
+      "order_index": 0,
+      "parent_block_id": null,        // null = direct child of page
+      "children": []                  // nested block descriptors (same shape, recursive)
+    }
+  ],
+  "subpages": [                       // subpage placeholders — rendered as linked_page blocks
+    { "title": "Action Items" }       // only title is stored; a new blank subpage is created on apply
+  ],
+  "database_schema": null             // object | null — if the page IS a database template,
+                                      // contains { properties: [...], views: [...] } (no entries)
+}
+```
+
+> When a template is applied (`POST /api/templates/:id/use`), the server walks `page_snapshot.blocks` recursively, inserts them as `Block` rows under the new page (with new UUIDs), and creates placeholder subpages for each entry in `subpages`. Database schemas are recreated via `database_properties` and `database_views` rows — no entry data is copied. All IDs in the snapshot are internal references only; new UUIDs are generated for every inserted row.
 
 ---
 
@@ -308,7 +338,7 @@ Template
 4. Only the template creator or a workspace Admin can edit or delete a custom template.
 5. Built-in templates are authored and managed exclusively by the Notelian team via Orbit Admin (`/orbit/templates`). Workspace members and workspace Admins have no ability to create, edit, or delete built-in templates.
 6. Built-in templates have a `draft` / `published` status. Only published templates appear in the user-facing gallery. Draft templates are visible only in Orbit Admin.
-7. Each workspace allows up to 5 custom templates.
+7. Each workspace allows up to **5 custom templates**. **Enforcement:** the `POST /api/workspaces/:workspaceId/templates` handler executes `SELECT COUNT(*) FROM templates WHERE workspace_id = :workspaceId AND is_built_in = false FOR UPDATE` before inserting; if count ≥ 5 it returns `400 { error: "Template limit reached. A workspace can have at most 5 custom templates." }`. The count check and the insert run in a single transaction (the `FOR UPDATE` prevents a race condition where two concurrent requests both read count = 4 and both succeed).
 8. Template Button block content is part of the page's block structure — it is not a separate template stored in the template library.
 9. Database entries are never included when saving a page as a template — only the database schema and views are preserved.
 

@@ -26,7 +26,11 @@ A database in Notelian is a structured collection where each entry is a full pag
 **Inline database:**
 - Embedded as a block inside an existing page, alongside other content
 - Insert via slash command: `/database` or `/table`
+- On insert, a picker appears with two options:
+  - **"New database"** — creates a brand-new database page and embeds it
+  - **"Existing database"** — search by name and embed any database the user has access to
 - Multiple databases can be embedded on the same page
+- An inline database is functionally identical to a full-page database — same views, filters, sorts, and entry management. The only difference is how it is displayed (embedded in a page vs. occupying the full viewport)
 
 ---
 
@@ -158,6 +162,8 @@ Add sort rules to order database entries.
 - Add up to **5 stacked sort rules** (applied in order — first rule takes priority)
 - Empty values always appear at the bottom (ascending) or top (descending)
 - If two entries are equal after all sort rules, creation time is the final tiebreaker
+
+> **Sorts and grouping are independent.** The 5-rule limit applies to sort rules only. Grouping by a Select property (Board view or Table view "Group by") is a separate setting stored in `database_views.group_by_property_id` and does not count against the sort limit. A view can have up to 5 active sort rules **and** a grouping applied simultaneously.
 
 ---
 

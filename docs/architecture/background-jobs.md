@@ -83,7 +83,7 @@ the feature spec that owns the job's behavior.
 | Job | Trigger | Purpose |
 | --- | --- | --- |
 | `auto-delete-expired-trash` | Daily 02:00 UTC | Permanently remove trashed pages past the 30-day retention (cascades to subpages + files) |
-| `warn-expiring-trash` | Daily 02:00 UTC | Flag pages ≤7 days from auto-deletion for the warning banner; at 3 days send a one-time in-app + email warning to the page's deleter and creator |
+| `warn-expiring-trash` | Daily 02:00 UTC | Two queries per run: (1) **Banner flag** — no DB write needed; the UI derives the 7-day banner from `deleted_at <= NOW() - INTERVAL '23 days'` at render time. (2) **3-day notification** — `SELECT … FROM pages WHERE is_deleted = true AND deleted_at <= NOW() - INTERVAL '27 days' AND deleted_at > NOW() - INTERVAL '30 days' AND trash_warning_sent = false`; for each matching page, atomically `UPDATE pages SET trash_warning_sent = true WHERE id = :id AND trash_warning_sent = false` (check return count to guard against concurrent runs), then enqueue the in-app + email notification to the page's deleter and creator |
 | `auto-delete-expired-versions` | Daily | Prune page versions outside the retention window |
 
 ### Notifications — [notifications.md](../../Features/notifications.md)
@@ -93,6 +93,7 @@ the feature spec that owns the job's behavior.
 | `send-notification-email` | On event (realtime frequency) | Deliver a per-event notification email (mention, comment reply, access granted) via Nodemailer/SMTP; retries up to 3× with exponential backoff (1 min → 5 min → 25 min) |
 | `send-email-digest` | Daily 08:00 (user TZ) / weekly | Send the daily or weekly digest of unread notifications; skips users with nothing unread |
 | `cleanup-old-notifications` | Nightly | Permanently delete notification rows older than 90 days |
+| `cleanup-email-outbox` | Nightly | Sweep `email_outbox` rows stuck in `sending` > 10 min → `failed`; purge `sent` rows older than 30 days |
 
 ---
 
@@ -108,8 +109,10 @@ the feature spec that owns the job's behavior.
 | `auto-delete-expired-versions` | Daily |
 | `send-email-digest` | Daily 08:00 (user TZ) / weekly |
 | `cleanup-old-notifications` | Nightly |
+| `cleanup-email-outbox` | Nightly |
 
 On-demand (not scheduled): `delete-user-private-pages`, `send-notification-email`.
+Nightly (cleanup): `cleanup-old-notifications`, `cleanup-email-outbox`.
 All scheduled jobs use `policy: "exclusive"`.
 
 ---

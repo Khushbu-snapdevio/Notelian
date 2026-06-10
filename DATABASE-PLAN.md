@@ -13,7 +13,7 @@ The schema is **split one file per domain** under `lib/db/schema/` (not a single
 | Pages & content | `pages`, `page_closure`, `page_versions`, `blocks` |
 | Databases | `database_views`, `database_properties`, `property_values` |
 | Sharing | `page_permissions`, `public_links`, `guest_invitations` |
-| Collaboration | `comments`, `notifications`, `notification_preferences` |
+| Collaboration | `comments`, `notifications`, `notification_preferences`, `email_outbox` |
 | Search | `search_index` |
 | Templates | `templates` |
 | Files | `file_uploads`, `workspace_storage_usage` |
@@ -50,7 +50,7 @@ The schema lives in `lib/db/schema/` — one file per domain, mirroring how a re
 | `lib/db/schema/pages.ts` | `pages`, `page_closure`, `page_versions`, `blocks` |
 | `lib/db/schema/databases.ts` | `database_views`, `database_properties`, `property_values` |
 | `lib/db/schema/sharing.ts` | `page_permissions`, `public_links`, `guest_invitations` |
-| `lib/db/schema/collaboration.ts` | `comments`, `notifications`, `notification_preferences` |
+| `lib/db/schema/collaboration.ts` | `comments`, `notifications`, `notification_preferences`, `email_outbox` |
 | `lib/db/schema/search.ts` | `search_index` |
 | `lib/db/schema/templates.ts` | `templates` |
 | `lib/db/schema/files.ts` | `file_uploads`, `workspace_storage_usage` |
@@ -122,11 +122,16 @@ export const notificationType = pgEnum("notification_type", [
   "mention", "comment", "reply", "resolved", "reopened",
   "access_granted", "workspace_invite", "guest_accepted", "trash_warning",
 ]);
-export const emailFrequency = pgEnum("email_frequency", ["realtime", "daily", "weekly", "off"]);
+export const emailFrequency    = pgEnum("email_frequency", ["realtime", "daily", "weekly", "off"]);
+export const emailOutboxStatus = pgEnum("email_outbox_status", ["queued", "sending", "sent", "failed"]);
+export const emailOutboxType   = pgEnum("email_outbox_type", ["notification_email", "digest_email"]);
 
 export const templateCategory = pgEnum("template_category", ["personal", "productivity", "project_mgmt", "team", "crm"]);
 export const templateStatus   = pgEnum("template_status", ["draft", "published"]);
 
+// "page" = ordinary page; "entry" = database entry (its title + text property values are indexed together);
+// "comment" = a comment thread root. Property values are NOT a separate source_type — they are
+// aggregated into the "entry" row's search_vector by the property_values trigger.
 export const searchSourceType = pgEnum("search_source_type", ["page", "entry", "comment"]);
 export const auditTargetType  = pgEnum("audit_target_type", ["user", "workspace"]);
 ```
@@ -484,6 +489,25 @@ export const notificationPreferences = pgTable("notification_preferences", {
   weeklyDigestDay: integer("weekly_digest_day").notNull().default(1),  // 0=Sun … 6=Sat
   updatedAt:       updatedAt(),
 });
+
+// Outbox for idempotent SMTP delivery — state machine: queued → sending → sent (terminal) / failed (terminal)
+// The row id is passed as the SMTP Message-ID header so duplicate job runs never double-send.
+// A nightly reaper (`cleanup-email-outbox`) sweeps rows stuck in `sending` > 10 min → `failed`
+// and purges `sent` rows older than 30 days. Never auto-resend `failed` rows.
+export const emailOutbox = pgTable("email_outbox", {
+  id:             uuid("id").primaryKey().defaultRandom(),  // used as SMTP Message-ID for dedup
+  recipientEmail: text("recipient_email").notNull(),
+  subject:        text("subject").notNull(),
+  htmlBody:       text("html_body").notNull(),
+  type:           emailOutboxType("type").notNull(),
+  status:         emailOutboxStatus("status").notNull().default("queued"),
+  attemptCount:   integer("attempt_count").notNull().default(0),
+  lastError:      text("last_error"),
+  createdAt:      timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:      updatedAt(),
+}, (t) => ({
+  statusIdx: index("email_outbox_status_idx").on(t.status),
+}));
 ```
 
 ## Search — `lib/db/schema/search.ts`
@@ -551,9 +575,14 @@ export const fileUploads = pgTable("file_uploads", {
   confirmedAt:   timestamp("confirmed_at", { withTimezone: true }),  // null until /confirm
   createdAt:     timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
-  workspaceIdx: index("file_uploads_workspace_idx").on(t.workspaceId),
-  objectKeyIdx: uniqueIndex("file_uploads_object_key_idx").on(t.objectKey),
-  confirmedIdx: index("file_uploads_confirmed_idx").on(t.confirmedAt),
+  workspaceIdx:        index("file_uploads_workspace_idx").on(t.workspaceId),
+  objectKeyIdx:        uniqueIndex("file_uploads_object_key_idx").on(t.objectKey),
+  confirmedIdx:        index("file_uploads_confirmed_idx").on(t.confirmedAt),
+  // Enforce the quota-exemption invariant: user_avatar MUST have workspace_id = NULL.
+  // All other kinds MUST have workspace_id set (not NULL).
+  avatarWorkspaceChk: check("file_uploads_avatar_workspace_chk",
+    sql`(kind = 'user_avatar' AND workspace_id IS NULL) OR (kind != 'user_avatar' AND workspace_id IS NOT NULL)`
+  ),
 }));
 
 // 1:1 with workspace — 5 GB quota
@@ -764,7 +793,22 @@ Invariants the database **cannot** express as constraints. Enforce each in a ser
 - Built-in **Title** property is always position 1 and undeletable.
 - Max **50 user-created properties** per database (system + back-relation properties excluded).
 - Deleting a property deletes all its `property_values`; deleting a Select option clears it from all entries.
-- Relation properties are **bidirectional** — writing A→B also writes the back-relation B→A; back-relations are auto-created and read-only. Relation values are stored as a list of entry IDs inside `property_values.value` (jsonb) on **both** sides; the two sides are kept in sync **in the same transaction** as any relation write (add/remove). There is no FK from inside the jsonb, so:
+- Relation properties are **bidirectional** — writing A→B also writes the back-relation B→A; back-relations are auto-created and read-only. Relation values are stored as a list of entry IDs inside `property_values.value` (jsonb) on **both** sides; the two sides are kept in sync **in the same transaction** as any relation write (add/remove). Canonical pattern (pseudo-SQL for an "add B to A's relation" write — both sides in one transaction):
+  ```sql
+  BEGIN;
+  -- 1. Upsert A's relation value: append B's id to the jsonb array
+  INSERT INTO property_values (entry_id, property_id, value)
+    VALUES (:entryA, :forwardPropId, jsonb_build_array(:entryB))
+    ON CONFLICT (entry_id, property_id) DO UPDATE
+      SET value = property_values.value || to_jsonb(:entryB::text);
+  -- 2. Upsert B's back-relation value: append A's id
+  INSERT INTO property_values (entry_id, property_id, value)
+    VALUES (:entryB, :backPropId, jsonb_build_array(:entryA))
+    ON CONFLICT (entry_id, property_id) DO UPDATE
+      SET value = property_values.value || to_jsonb(:entryA::text);
+  COMMIT;
+  ```
+  There is no FK from inside the jsonb, so:
   - **On entry delete:** the deleted entry's own `property_values` cascade away, but its id remains embedded in the *other* side's relation lists. The delete transaction (or the `auto-delete-expired-trash` job, for trashed entries) must scrub the deleted id from every back-referenced entry's relation value. Until scrubbed, the UI renders a stale id as a `"Deleted entry"` chip (acceptable, but the id must eventually be removed to keep counts/filters correct).
   - **On Relation property delete:** remove the property, its values, **and** the paired back-relation property + its values — all in one transaction.
 - `@me` Person default resolves to a concrete `user_id` at entry-creation time.
@@ -854,13 +898,139 @@ export const db = drizzle(client, { schema, casing: "snake_case" });
 
 ```bash
 pnpm run db:generate      # → drizzle/0000_*.sql
-# then, in that generated SQL, add by hand:
-#   • ALTER TABLE pages ADD CONSTRAINT pages_default_view_fk
-#       FOREIGN KEY (default_view_id) REFERENCES database_views(id) ON DELETE SET NULL;
-#   • GIN index on search_index.search_vector (if not emitted)
-#   • FTS triggers populating search_vector on blocks / property_values / comments
-#   • page_closure maintenance (or handle in app transactions)
+# then, in that generated SQL, add by hand the four hand-written SQL blocks below
 pnpm run db:migrate
+```
+
+**Hand-written SQL to add to the generated migration** (add each block verbatim after the Drizzle-generated DDL):
+
+**1. Deferred FK — circular reference between `pages` and `database_views`**
+
+```sql
+-- pages.default_view_id → database_views.id is circular so it cannot be declared inline.
+-- Add it after both tables exist.
+ALTER TABLE pages
+  ADD CONSTRAINT pages_default_view_fk
+  FOREIGN KEY (default_view_id) REFERENCES database_views(id) ON DELETE SET NULL;
+```
+
+**2. FTS triggers — keep `search_index.search_vector` current**
+
+```sql
+-- Function called by all three triggers below.
+CREATE OR REPLACE FUNCTION notelian_search_upsert() RETURNS trigger AS $$
+BEGIN
+  -- Upsert the search_index row for the affected source.
+  -- The trigger must be customised per table (see per-trigger COMMENT below).
+  -- Weights: title = A, entry-title = B, block content = C, comments = D
+  INSERT INTO search_index (id, workspace_id, source_type, source_id, title, search_vector, page_id, updated_at)
+  SELECT
+    gen_random_uuid(),
+    p.workspace_id,
+    'page',
+    p.id,
+    p.title,
+    setweight(to_tsvector('english', coalesce(p.title, '')), 'A'),
+    p.id,
+    now()
+  FROM pages p
+  WHERE p.id = NEW.page_id AND p.is_deleted = false
+  ON CONFLICT (source_type, source_id) DO UPDATE
+    SET search_vector = EXCLUDED.search_vector,
+        title = EXCLUDED.title,
+        updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger on blocks: re-index the page (all block text is weight C in the full index).
+-- For full block-content indexing, update the function body to aggregate all block text
+-- for the page and produce a weighted tsvector: title A + block text C.
+CREATE OR REPLACE TRIGGER blocks_search_update
+AFTER INSERT OR UPDATE OF content ON blocks
+FOR EACH ROW EXECUTE FUNCTION notelian_search_upsert();
+
+-- Trigger on property_values: re-index the entry (entry title = B, property text values = C).
+-- A separate trigger function aggregates all text-type property values for the entry.
+CREATE OR REPLACE FUNCTION notelian_entry_search_upsert() RETURNS trigger AS $$
+DECLARE
+  v_entry   pages%ROWTYPE;
+  v_prop_text text;
+BEGIN
+  SELECT * INTO v_entry FROM pages WHERE id = NEW.entry_id AND is_deleted = false;
+  IF NOT FOUND THEN RETURN NEW; END IF;
+
+  -- Aggregate all text-type property values for this entry into a single string.
+  -- Includes: text, select option names, multi-select option names (from config jsonb),
+  --           url, email, phone values stored as plain text in property_values.value.
+  SELECT string_agg(pv.value::text, ' ')
+    INTO v_prop_text
+    FROM property_values pv
+    JOIN database_properties dp ON dp.id = pv.property_id
+   WHERE pv.entry_id = NEW.entry_id
+     AND dp.type IN ('text', 'select', 'multi_select', 'url', 'email', 'phone');
+
+  INSERT INTO search_index (id, workspace_id, source_type, source_id, title, search_vector, page_id, updated_at)
+  SELECT
+    gen_random_uuid(),
+    v_entry.workspace_id,
+    'entry',
+    v_entry.id,
+    v_entry.title,
+    setweight(to_tsvector('english', coalesce(v_entry.title, '')), 'B') ||
+    setweight(to_tsvector('english', coalesce(v_prop_text, '')), 'C'),
+    v_entry.id,
+    now()
+  ON CONFLICT (source_type, source_id) DO UPDATE
+    SET search_vector = EXCLUDED.search_vector,
+        title = EXCLUDED.title,
+        updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER property_values_search_update
+AFTER INSERT OR UPDATE OF value ON property_values
+FOR EACH ROW EXECUTE FUNCTION notelian_entry_search_upsert();
+
+-- Trigger on comments: re-index the comment (comments = D weight).
+CREATE OR REPLACE TRIGGER comments_search_update
+AFTER INSERT OR UPDATE OF content ON comments
+FOR EACH ROW EXECUTE FUNCTION notelian_search_upsert();
+```
+
+> **Note:** `notelian_search_upsert()` handles pages/blocks/comments (source_type `page` or `comment`). `notelian_entry_search_upsert()` handles property value changes (source_type `entry`) and aggregates all text-type property values for the entry. Before building search, expand `notelian_search_upsert()` to aggregate **all** block text for the triggering page (not just the triggering row) and produce a properly weighted `tsvector`: title (A), block content (C), comments (D). Both triggers fire per-row so bulk operations (import, mass edit) must batch writes to avoid firing them thousands of times in one transaction (see CLAUDE.md Rule 6).
+
+**3. Closure table maintenance — reference SQL patterns (enforce in app transactions)**
+
+```sql
+-- INSERT a new page (call inside the same transaction that inserts the pages row):
+INSERT INTO page_closure (ancestor_id, descendant_id, depth)
+  -- Self-reference at depth 0
+  SELECT NEW.id, NEW.id, 0
+  UNION ALL
+  -- Inherit all ancestors of the parent
+  SELECT ancestor_id, NEW.id, depth + 1
+  FROM page_closure
+  WHERE descendant_id = NEW.parent_id;
+
+-- MOVE a page to a new parent (run all three steps in one transaction):
+-- Step 1: Remove old ancestor paths (keep self-row at depth 0)
+DELETE FROM page_closure
+WHERE descendant_id IN (SELECT descendant_id FROM page_closure WHERE ancestor_id = :pageId)
+  AND ancestor_id NOT IN (SELECT descendant_id FROM page_closure WHERE ancestor_id = :pageId);
+-- Step 2: Re-insert paths through the new parent for the page and all its descendants
+INSERT INTO page_closure (ancestor_id, descendant_id, depth)
+  SELECT p.ancestor_id, c.descendant_id, p.depth + c.depth + 1
+  FROM page_closure p, page_closure c
+  WHERE p.descendant_id = :newParentId
+    AND c.ancestor_id = :pageId;
+-- Step 3: Re-insert self-rows for all descendants at depth 0 (already exist, skip if using ON CONFLICT DO NOTHING)
+
+-- DELETE a page tree (cascade via ON DELETE CASCADE on page_closure FKs handles this automatically).
+-- The FK cascade on pages.id → page_closure.ancestor_id/descendant_id deletes all closure rows
+-- when a page is permanently deleted. For soft-delete (is_deleted = true) the closure rows remain
+-- and are used for permission checks on trashed pages.
 ```
 
 > **Auth ↔ schema mapping (settled — do this before writing any auth code):**

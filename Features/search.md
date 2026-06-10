@@ -69,12 +69,13 @@ When the user starts typing:
 
 ## What Is Searched
 
-| Content Type | Searchable fields |
-|-------------|------------------|
-| Pages | Title, all block text content |
-| Database entries | Entry title, all text-type property values, Select/Multi-Select option names |
-| Comments | Comment text, reply text |
-| Property values | Text, URL, Email, Phone properties |
+| Content Type | Searchable fields | `source_type` in search_index |
+|-------------|------------------|-----------------------------|
+| Pages | Title, all block text content | `page` |
+| Database entries | Entry title, all text-type property values (Text, URL, Email, Phone), Select/Multi-Select option names | `entry` |
+| Comments | Comment text, reply text | `comment` |
+
+> **Property values are not a separate `source_type`.** Text, URL, Email, Phone values for a database entry are aggregated into that entry's `search_index` row (`source_type = 'entry'`) by the `property_values` trigger — there is no separate `property_value` enum member. When a user applies the "Entries only" filter in the search dialog, they see results from `source_type = 'entry'` which already includes property value matches.
 
 **Not searched:**
 - File contents (PDFs, Word docs, images — only filename)

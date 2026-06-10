@@ -42,7 +42,7 @@
 | Revoke all sessions | Signs the user out of all devices |
 | View session list | All active sessions for a user with device, IP, and last active |
 
-**Impersonation:** Marked with `impersonated_by` on the session record. Always logged to the audit trail. The impersonation session has a maximum duration of 2 hours.
+**Impersonation:** Marked with `impersonated_by` on the session record. Always logged to the audit trail. The impersonation session has a maximum duration of 2 hours. **Enforcement:** when the Better Auth Admin plugin creates the impersonation session, set `expiresAt = now() + 2 hours` (instead of the normal 7-day sliding window). The platform admin's request guard checks `session.expiresAt` on every request; an expired impersonation session redirects to the Orbit login screen. No sliding TTL refresh applies — the 2-hour window is fixed from session creation.
 
 ---
 
@@ -172,7 +172,7 @@ All Orbit Admin endpoints require `is_platform_admin = true` on the authenticate
 
 1. Orbit Admin is accessible only to users with `is_platform_admin = true` in the database — this flag cannot be set from any in-product UI.
 2. Every action performed in Orbit Admin is logged to the audit trail — the log is append-only.
-3. Impersonation sessions are marked with `impersonated_by` on the session record and have a maximum 2-hour TTL.
+3. Impersonation sessions are marked with `impersonated_by` on the session record and have a maximum 2-hour TTL. The TTL is enforced by setting `session.expires_at = now() + 2h` at creation — no sliding refresh applies. The auth guard rejects the session once `expires_at` is in the past. **Preventing Better Auth's default sliding refresh:** add a `beforeRefresh` hook in `lib/auth/` that checks `session.impersonated_by`; if set, the hook must reject the refresh (return an error or return the session unchanged with the original `expires_at`). Without this override, Better Auth will automatically extend the TTL on every request, defeating the 2-hour hard limit.
 4. Banning a user immediately revokes all their active sessions — the ban takes effect with no grace period.
 5. Force-deleting a workspace permanently removes all its data — this cannot be undone. Requires explicit text confirmation.
 6. Platform Admins cannot see private page content — Orbit Admin only exposes private page titles for compliance.

@@ -64,27 +64,30 @@ notelian/
 
 ### Phase 1 — MVP (Current)
 
-**Goal:** Core workspace, writing, and collaboration features.
+**Goal:** Core workspace, writing, and collaboration features. Every item below is mandatory and ships together.
 
-**Scope:**
-- Authentication (passwordless magic link — Better Auth), database-backed sessions
-- Workspace creation, members, and roles
-- Onboarding wizard, tooltip tour, contextual hints
-- Sidebar navigation with page tree and drag-and-drop
-- Pages — unlimited hierarchy, icon, cover, version history, export
-- Block-based editor — all block types, slash command, auto-save
-- Templates — built-in gallery + custom workspace templates
-- Databases — all 4 views (Table, Board, Calendar, Gallery), filters, sorting, grouping
-- Database properties — all 11 types + system properties
-- Global search — PostgreSQL full-text search
-- Comments — block, text-level, and page-level; resolve/reopen threads
-- Mentions — @name, @page, @date
-- Permissions — workspace roles + page-level access, public links, guests
-- Notifications — in-app (SSE), email digest (pg-boss)
-- Orbit Admin — user, workspace, and template management
-- File Storage (S3-compatible object storage, pre-signed direct uploads)
+| # | Feature Area | Key Deliverables |
+|---|-------------|-----------------|
+| 1 | **Foundation** | Next.js 15 + TypeScript strict + Tailwind v4, Drizzle + PostgreSQL, Zod env, pg-boss worker harness, `JOB_NAMES` + `QUEUE_OPTIONS` registry, ESLint + Vitest + Playwright scaffold |
+| 2 | **Auth** | Magic-link sign-in/sign-up (passwordless only), database-backed sessions, session list + revoke, account settings, account deletion + `delete-user-private-pages` job |
+| 3 | **Workspace** | Workspace CRUD, roles (Admin/Editor/Viewer), invite by email + invite link, member management, ownership transfer, workspace switcher |
+| 4 | **Navigation** | Collapsible sidebar, hierarchical page tree (closure table), drag-and-drop reorder, favorites, recently visited (10), sidebar filter, trash section |
+| 5 | **Pages** | Page CRUD, unlimited subpage hierarchy, icons (emoji + image), cover banner, move/duplicate, trash/restore, page lock, layout options (full-width / small text / font), version history (7-day), export (Markdown / HTML / PDF), trash + version cleanup jobs |
+| 6 | **Block Editor** | TipTap setup, all block types (text / task / media / structure / code / equation / reference), `/` slash command, inline toolbar, Markdown shortcuts, drag-and-drop, multi-select, auto-save, IndexedDB offline queue, 200-step undo, `tsvector` triggers on block content |
+| 7 | **File Storage** | S3 pre-signed upload flow, per-type size limits + workspace quota (5 GB) enforced at sign step, CDN URLs, storage usage UI, stale-upload + orphaned-media + sync-usage cleanup jobs, `email_outbox` table |
+| 8 | **Databases** | Database schema extending pages, all 11 property types + system properties, Table + Board + Calendar + Gallery views, AND/OR filters, 5-level sort, grouping, multiple named views, inline + full-page modes |
+| 9 | **Templates** | Built-in template gallery (5 categories), apply template, custom workspace templates (save page, max 5), Template Button block, built-in template authoring in Orbit Admin |
+| 10 | **Search** | `search_index` table, tsvector + GIN index, PostgreSQL triggers on block content, permission-filtered search API, `Ctrl+K` command palette, filters (location / type / date / author), recently visited before query |
+| 11 | **Comments + Mentions** | Block-level + text-range + page-level comments, threads (one level), resolve/reopen, `@name` mentions (triggers notification), `@page` live link, `@date` natural-language date |
+| 12 | **Permissions** | `page_permissions` table, single recursive CTE for effective permission, SQL-level filtering (no post-fetch), subpage inheritance + per-page override, guest invites, public links, workspace role ceiling, private pages |
+| 13 | **Notifications** | SSE stream (`/api/notifications/stream`, Railway-hosted), Notification Center panel, toast, all event triggers, `email_outbox` outbox pattern, `send-notification-email` + `send-email-digest` + cleanup jobs, notification preferences |
+| 14 | **Onboarding** | Setup Wizard (Profile → Workspace → Invite → Template), 5-step Tooltip Tour, Contextual Hints (one-time, dismissable), `user_hint_states` + `user_preferences` tables |
+| 15 | **Orbit Admin** | User management (ban/unban/impersonate/revoke), workspace management, template management, platform analytics, append-only `platform_audit_log` |
+| 16 | **Testing + CI/CD** | Vitest unit + integration (real PostgreSQL), Playwright E2E (sign-up → page → editor → database → search → comment → notification), CI pipeline, EXPLAIN ANALYZE performance review on permission CTEs + FTS |
 
 **Estimated timeline:** 16–20 weeks
+
+> Full step-by-step sub-tasks for each row above are in [GETTING-STARTED.md §11](../GETTING-STARTED.md).
 
 ---
 
@@ -166,6 +169,16 @@ Notelian uses PostgreSQL's native `tsvector` / `tsquery` for search rather than 
 
 pg-boss is a job queue built on PostgreSQL. It handles notification delivery, email digest scheduling, and cleanup jobs without introducing Redis or a separate message broker. Jobs are transactional — if the triggering action (a comment save) fails, the notification job is never created. The tradeoff is that pg-boss is less efficient than Redis pub/sub at very high message throughput, which is acceptable for an MVP-scale product.
 
+### Worker Scaling
+
+The pg-boss worker process (`pnpm worker`) is safe to run as multiple replicas. pg-boss uses `FOR UPDATE SKIP LOCKED` to claim job rows — two replicas cannot process the same job. All recurring queues use `policy: "exclusive"` so a slow tick never overlaps the next one across replicas.
+
+**Concurrency rules:**
+- `localConcurrency: 1` for every queue — each replica processes one job per type at a time; scale via replicas, not per-process concurrency.
+- Postgres `max_connections` must cover all processes. Each worker replica uses ~20 connections (Drizzle pool) + ~10 pg-boss internal. Each Next.js process uses ~20. Set `max_connections ≥ 100` for up to 3 worker replicas.
+
+**Job registry enforcement:** Every job name is defined in a `JOB_NAMES` enum; every entry has an explicit record in `QUEUE_OPTIONS: Record<JobName, PgBossQueueOptions>` — the TypeScript compiler fails at build time if a job is missing queue config. See [GETTING-STARTED.md §9](../GETTING-STARTED.md) for the full registry and per-job settings.
+
 ---
 
 ### Why Drizzle ORM over Prisma?
@@ -220,6 +233,7 @@ Collaboration:
   comments
   notifications
   notification_preferences
+  email_outbox
 
 User preferences:
   user_preferences

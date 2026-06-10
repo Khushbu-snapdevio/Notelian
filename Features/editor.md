@@ -75,7 +75,7 @@ The Notelian editor is block-based — every piece of content is a discrete bloc
 | Block | Slash Command | Description |
 |-------|--------------|-------------|
 | Linked Page | `/page` | Clickable card linking to another page in the workspace |
-| Inline Database | `/database` | Embeds a database view directly inside the page |
+| Inline Database | `/database` | Embeds a full database (all its views) directly inside the page. The block stores the `databaseId`; the database itself is a separate `pages` row (`kind='database'`) and can also be opened as a full-page database. |
 | Template Button | `/template-button` | Inserts a configurable button that clones a predefined block structure on click (see [Templates](./templates.md)) |
 
 ---
@@ -189,7 +189,7 @@ Blocks can be nested inside other blocks:
 - **Toggle List:** Click the triangle to expand/collapse nested blocks
 - **Bulleted / Numbered List:** `Tab` to indent, `Shift+Tab` to outdent (creates sub-list)
 - **Callout:** Can contain any block type inside the callout box
-- **Column Layout:** Each column is a container for other blocks
+- **Column Layout:** Each column is a container for other blocks. Columns blocks support nesting of all block types **except** another Columns block (no nested column layouts). Dragging a block into a column or out of a column is allowed; the `parent_block_id` is updated accordingly. A Columns block always has exactly 2 or 3 child column-container blocks at depth 1; each column-container can hold any number of non-Columns blocks at depth 2.
 - **To-Do:** Can contain text blocks for longer descriptions
 
 ---
@@ -266,12 +266,37 @@ Block
 
 **Content JSONB structure (examples):**
 ```
-Paragraph:  { "text": [{ "text": "Hello", "marks": ["bold"] }] }
-Heading:    { "level": 1, "text": [{ "text": "Title" }] }
-Code Block: { "language": "typescript", "code": "const x = 1;" }
-Image:      { "url": "...", "caption": "...", "width": 720 }
-To-Do:      { "checked": false, "text": [...] }
+Paragraph:       { "text": [{ "text": "Hello", "marks": ["bold"] }] }
+Heading:         { "level": 1, "text": [{ "text": "Title" }] }
+Code Block:      { "language": "typescript", "code": "const x = 1;", "lineNumbers": true }
+Image:           { "url": "...", "caption": "...", "width": 720, "objectKey": "..." }
+To-Do:           { "checked": false, "text": [...] }
+Linked Page:     { "pageId": "<uuid of the target page>" }
+Inline Database: { "databaseId": "<uuid of the database page>", "defaultViewId": "<uuid>" }
+Columns:         { "columnCount": 2 }  // child blocks with parent_block_id form the columns
+Template Button: {
+                   "label": "+ Add Today's Log",
+                   "insertLocation": "below_button",  // "below_button" | "bottom_of_page"
+                   "templateBlocks": [
+                     // Serialized block structures stored inline — NOT as separate Block rows.
+                     // Full TemplateBlock schema (recursive):
+                     // {
+                     //   "type": blockType enum value,
+                     //   "content": jsonb (same shape as the Block content field for that type),
+                     //   "orderIndex": integer,
+                     //   "schemaVersion": integer,
+                     //   "parentBlockId": string | null  (references another entry's stable id within
+                     //                                    this templateBlocks array for nested layouts),
+                     //   "children": TemplateBlock[]     (nested blocks, same shape, recursive)
+                     // }
+                     // On button click the server walks templateBlocks recursively, inserts each as a
+                     // new Block row with a freshly generated UUID, preserving parent/child relationships.
+                     { "type": "paragraph", "content": { "text": [] }, "orderIndex": 0, "schemaVersion": 1, "parentBlockId": null, "children": [] }
+                   ]
+                 }
 ```
+
+> **Template Button block** stores its template content directly in `content.templateBlocks` — it is NOT a separate entry in the `templates` table. When the button is clicked, the worker (or server action) clones `templateBlocks` as new `Block` rows under the page. See [templates.md](./templates.md) § Template Button Block.
 
 ---
 
@@ -308,6 +333,7 @@ To-Do:      { "checked": false, "text": [...] }
 7. Markdown shortcuts only trigger at the start of an empty block — they do not activate mid-sentence.
 8. The slash command menu dismisses automatically if the user clicks outside or presses Escape.
 9. All block types behave identically whether the block is on a page or inside a database entry.
+11. **Maximum block nesting depth is 10 levels** (the length of the `parent_block_id` chain from a leaf block to the page root). The ProseMirror schema must enforce this limit — dragging a block deeper than level 10 or pressing `Tab` past level 10 is silently blocked (the block stays at depth 10 rather than going deeper). A Columns block at depth 1 counts as one level; its column-container children are depth 2; blocks inside columns start at depth 3.
 10. Deleting a file block (Image, Video, Audio, File) does **not** immediately remove the stored file — undo (`Ctrl+Z`) and Version History must still be able to restore the block with its media intact. The stored file is removed later by a cleanup job, once no active block references it and it has aged out of the 7-day Version History window.
 
 ---

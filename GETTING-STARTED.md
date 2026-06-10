@@ -287,7 +287,7 @@ MAXMIND_LICENSE_KEY=<optional — session-list geolocation>
   - `POST /api/uploads/sign` → get signed URL + objectKey
   - `PUT {uploadUrl}` → upload bytes straight to the bucket
   - `POST /api/uploads/confirm` → verify object exists, record usage, return `fileUrl`
-  - `DELETE /api/uploads/:objectKey` → on block delete
+  - File deletion is **always async via pg-boss** — block deletes never delete the file synchronously (preserves undo + 7-day Version History; orphaned-media cleanup job removes the file once no live block or version references it)
 - Public URL pattern: `https://cdn.notelian.app/{objectKey}` (stable, never changes)
 
 **Per-type size limits:**
@@ -325,7 +325,8 @@ Search:         search_index (denormalized FTS rows for pages, entries,
 
 Templates:      templates
 
-Collaboration:  comments, notifications, notification_preferences
+Collaboration:  comments, notifications, notification_preferences,
+                email_outbox (queued → sending → sent state machine for SMTP delivery)
 
 User prefs:     user_preferences, user_hint_states,
                 user_favorites, user_recently_visited
@@ -427,22 +428,62 @@ pnpm worker               # pg-boss — notifications, email digests, cleanup jo
 
 ## 9. Background Jobs (pg-boss)
 
-All async/scheduled work runs through pg-boss in the **worker** process (§8). Collected from across the feature specs so nothing is forgotten:
+All async/scheduled work runs through pg-boss in the **worker** process (§8). Collected from across the feature specs so nothing is forgotten.
+
+> Job definitions live in `lib/jobs/` (notification triggers in `lib/notifications/`). Every job name must be registered in the `JOB_NAMES` enum and have an explicit entry in `QUEUE_OPTIONS` (`Record<JobName, PgBossQueueOptions>` — no `Partial<>`, compile-time guard) before worker boot. There is no separate broker — the queue tables live in the same PostgreSQL database.
+
+### 9.1 Job Registry
 
 | Job | Schedule / Trigger | Source feature |
 |-----|--------------------|----------------|
-| `cleanup-stale-uploads` | Every 30 min | File Storage — delete storage objects for uploads never confirmed |
-| `cleanup-orphaned-media` | Daily | File Storage — delete stored files no longer referenced by any active block or by a page version within the 7-day window (preserves undo / Version History) |
-| `sync-storage-usage` | Daily | File Storage — reconcile `bytes_used` against actual storage objects |
+| `cleanup-stale-uploads` | Every 30 min | File Storage — delete storage objects for uploads never confirmed within 30 min |
+| `cleanup-orphaned-media` | Daily | File Storage — delete stored files no longer referenced by any active block or by a page version within the 7-day window |
+| `sync-storage-usage` | Daily | File Storage — reconcile `bytes_used` against actual storage objects for drift correction |
 | `delete-user-private-pages` | On account-deletion confirm | Auth — purge private pages + their files for a deleted user |
 | `auto-delete-expired-trash` | Daily 02:00 UTC | Pages — permanently remove trashed pages past retention (cascades to subpages + files) |
-| `warn-expiring-trash` | Daily 02:00 UTC | Pages — flag pages ≤7 days from auto-deletion for the warning banner; at 3 days send a one-time in-app + email warning to the page's deleter and creator |
-| `auto-delete-expired-versions` | Daily | Pages — prune page versions outside the retention window |
+| `warn-expiring-trash` | Daily 02:00 UTC | Pages — flag pages ≤7 days from auto-deletion; at 3 days emit in-app + email warning to the page's deleter and creator |
+| `auto-delete-expired-versions` | Daily | Pages — prune page versions outside the 7-day retention window |
 | `send-email-digest` | Daily 08:00 (user TZ) / weekly | Notifications — send daily/weekly digest of unread items |
 | `cleanup-old-notifications` | Nightly | Notifications — permanently delete notifications older than 90 days |
-| `send-notification-email` | On event / scheduled | Notifications — deliver per-event emails; retries up to 3× with exponential backoff |
+| `send-notification-email` | On event | Notifications — deliver per-event emails via SMTP; writes to `email_outbox` outbox table for idempotent delivery |
+| `cleanup-email-outbox` | Nightly | Notifications — sweep `sending` rows stuck > 10 min → `failed`; delete `sent` rows older than 30 days |
 
-> Job definitions live in `lib/jobs/` (notification triggers in `lib/notifications/`) and must be registered on worker boot. There is no separate broker — the queue tables live in the same PostgreSQL database.
+### 9.2 Queue Options (per job)
+
+Every job must have an entry in `QUEUE_OPTIONS: Record<JobName, PgBossQueueOptions>`. Key fields:
+
+| Job | `retryLimit` | `retryDelay` (s) | `expireInSeconds` | `policy` |
+|-----|-------------|-----------------|-------------------|---------|
+| `cleanup-stale-uploads` | 2 | 60 | 1800 | `exclusive` |
+| `cleanup-orphaned-media` | 2 | 120 | 7200 | `exclusive` |
+| `sync-storage-usage` | 2 | 60 | 3600 | `exclusive` |
+| `delete-user-private-pages` | 3 | 60 | 3600 | — |
+| `auto-delete-expired-trash` | 2 | 120 | 3600 | `exclusive` |
+| `warn-expiring-trash` | 2 | 120 | 3600 | `exclusive` |
+| `auto-delete-expired-versions` | 2 | 60 | 3600 | `exclusive` |
+| `send-email-digest` | 2 | 300 | 3600 | `exclusive` |
+| `cleanup-old-notifications` | 2 | 60 | 3600 | `exclusive` |
+| `send-notification-email` | 3 | 60 | 1800 | — |
+| `cleanup-email-outbox` | 2 | 60 | 3600 | `exclusive` |
+
+> **`policy: "exclusive"`** on all recurring jobs — a slow tick must **never** overlap the next one. pg-boss enforces at-most-one-in-flight per queue via a unique index; the next tick is silently rejected while a previous run is still `active`. Accept a skipped tick over parallel execution — idempotent handlers self-heal on the next interval.
+
+### 9.3 Worker Scaling
+
+The pg-boss worker is safe to run as multiple replicas. pg-boss claims jobs via `FOR UPDATE SKIP LOCKED` — it is physically impossible for two replicas to process the same job row. All recurring queues use `policy: "exclusive"` so a slow tick never overlaps the next one across replicas.
+
+- **`localConcurrency: 1`** for every queue — each worker replica processes one job of each type at a time. Scale via more replicas, not by raising concurrency per process.
+- Postgres **`max_connections`** must cover all replicas. Each worker opens ~20 connections (Drizzle pool) + ~10 pg-boss internal. Add Next.js (~20). Set `max_connections ≥ 100` for up to 3 worker replicas.
+
+### 9.4 Handler Idempotency Patterns
+
+pg-boss guarantees **at-least-once** delivery — a handler can fire twice for the same job if the worker dies after the side effect succeeded but before pg-boss marks the job `completed`. Every handler that mutates state outside its own database row (emails, S3 deletes) must be idempotent. Canonical patterns:
+
+1. **Atomic status transition** — `UPDATE … SET status='deleting' WHERE id=? AND status='pending' RETURNING …`. A retry finds the row already `deleting` and short-circuits. Use for cleanup jobs that operate on status-bearing rows.
+
+2. **Outbox table** — for email delivery: insert a `queued` row into `email_outbox` (state: `queued → sending → sent`); the worker atomically transitions states; pass a stable job/row ID as the SMTP provider's message-ID for dedup. A nightly reaper sweeps rows stuck in `sending` → `failed` after a timeout. Use this pattern for `send-notification-email` and `send-email-digest`.
+
+3. **Check-before-act** — for operations with no natural status row (e.g., S3 object deletes): check existence before deleting; treat a "not found" response as success, not an error.
 
 ---
 
@@ -465,24 +506,28 @@ Fixed limits to enforce in code, collected from across the feature specs:
 
 ---
 
-## 11. Build Order (suggested sequence)
+## 11. Implementation Order
 
-A pragmatic dependency-ordered path through the MVP:
+Build in this exact sequence — each step depends on the ones before it.
 
-1. **Foundation** — Next.js + TypeScript + Tailwind + Drizzle + PostgreSQL connection + **pg-boss worker harness** (stub the worker process early so jobs have a home)
-2. **Auth** — Better Auth passwordless magic link, database-backed sessions
-3. **Workspace + members + roles** — the container everything hangs off
-4. **Navigation + Pages** — sidebar tree, page CRUD, icons/covers; **export (Markdown/HTML, then PDF via Puppeteer)** + version history
-5. **Editor** — TipTap, all block types, slash command, auto-save + IndexedDB offline queue
-6. **File Storage** — S3-compatible pre-signed uploads (needed by media blocks + covers)
-7. **Databases + Properties + Views** — Table → Board → Calendar → Gallery
-8. **Search** — PostgreSQL FTS + `search_vector` triggers
-9. **Comments & Mentions**
-10. **Permissions & Sharing** — page-level access, public links, guests
-11. **Notifications** — SSE in-app + pg-boss email digests
-12. **Templates** — built-in gallery + custom
-13. **Orbit Admin** — user/workspace/template management
-14. **Testing** — Vitest unit/integration + Playwright E2E
+| Order | Feature | What it covers | Depends on |
+|-------|---------|---------------|------------|
+| **1** | **Foundation** | Next.js 15 + TypeScript + Tailwind v4 · Drizzle ORM + PostgreSQL · Zod env validation (`lib/env.ts`) · pg-boss worker harness (`worker/index.ts`) · `JOB_NAMES` enum + `QUEUE_OPTIONS` registry · ESLint + Vitest + Playwright scaffold · base app shell layout | — |
+| **2** | **Authentication** | Magic-link sign-in / sign-up (passwordless) · database-backed sessions · session list + revoke · account settings (name, avatar) · account deletion + `delete-user-private-pages` job · auth middleware (redirect unauthenticated users) | Foundation |
+| **3** | **Workspace + Members** | Workspace CRUD (create, rename, delete) · roles: Admin / Editor / Viewer · invite by email + invite link · member management + role change · ownership transfer · workspace switcher in sidebar | Auth |
+| **4** | **Navigation + Sidebar** | Collapsible resizable sidebar · hierarchical page tree using **closure table** (build now — permissions need it later) · drag-and-drop reorder · favorites · recently visited (last 10) · sidebar filter · trash section | Workspace |
+| **5** | **Pages** | Page CRUD + unlimited subpage hierarchy · breadcrumbs · icons (emoji + image) · cover banner · move / duplicate · trash + restore · page lock · layout options (full-width / small text / font) · **version history** (7-day) · export: Markdown + HTML + PDF · trash auto-delete + version pruning pg-boss jobs | Navigation |
+| **6** | **Block Editor** | TipTap (ProseMirror) · all block types: Paragraph, H1/H2/H3, Bulleted List, Numbered List, Toggle, Quote, Callout, Divider, To-Do, Image, Video, Audio, File, Table of Contents, Simple Table, Columns, Code Block, Equation, Linked Page, Inline Database · `/` slash command · floating inline toolbar · Markdown shortcuts · block drag-and-drop · multi-block select · continuous auto-save · IndexedDB offline queue · 200-step undo · `tsvector` PostgreSQL triggers on block content changes (feeds Step 10 search) | Pages |
+| **7** | **File Storage** | S3 pre-signed upload flow (`/api/uploads/sign` → `/api/uploads/confirm`) · per-type size limits + 5 GB workspace quota enforced at sign step · CDN URLs · storage usage UI in workspace settings · `cleanup-stale-uploads` + `cleanup-orphaned-media` + `sync-storage-usage` jobs · `email_outbox` table (created here; used in Step 13) | Editor (media blocks need S3) |
+| **8** | **Databases + Properties + Views** | Database schema extending pages · **all 11 property types** (Text, Number, Select, Multi-Select, Date, Checkbox, URL, Email, Phone, Person, Relation) + system properties · **4 views**: Table → Board → Calendar → Gallery · AND/OR filters · up to 5 sort rules · grouping by Select · multiple named views · inline + full-page modes · every database entry is itself a full page | Pages + Editor |
+| **9** | **Templates** | Built-in template gallery (5 categories: Personal, Productivity, Project Management, Team & Knowledge, Personal CRM) · apply template (clones page + blocks) · custom workspace templates (save any page, max 5) · Template Button block · built-in template authoring via Orbit Admin | Pages + Editor + Databases |
+| **10** | **Search** | `search_index` table · `tsvector` + GIN index · verify block-content triggers (from Step 6) populate the index · permission-filtered search API · `Ctrl+K` / `Cmd+K` command palette · recently visited before typing · filter by location / type / date / author | Pages + Editor + Workspace |
+| **11** | **Comments + Mentions** | Block-level comments · text-range comments · page-level comments · threaded replies (one level) · resolve / reopen threads · `@name` mention (autocomplete, triggers notification in Step 13) · `@page` live link (auto-updates on rename) · `@date` natural-language date | Pages + Editor + Workspace |
+| **12** | **Permissions + Sharing** | `page_permissions` table · **single recursive CTE** resolving effective permission (no N+1 queries) · SQL-level filtering — restricted rows never leave the database · subpage permission inheritance + per-page override · guest invite by email · public link (no-login view-only) · workspace role as capability ceiling · private pages (invisible to all others including admins) | Pages + Workspace + Closure table |
+| **13** | **Notifications** | SSE stream `GET /api/notifications/stream` (**must run on Railway / persistent-connection host, not Vercel**) · Notification Center panel (bell icon, unread badge, filters) · real-time toast (5 s auto-dismiss) · all triggers: @mentions, comment replies, thread resolved, access granted, workspace invite, trash warning · `send-notification-email` + `send-email-digest` jobs (outbox pattern via `email_outbox`) · `cleanup-old-notifications` + `cleanup-email-outbox` jobs · notification preferences (`/settings/notifications`) | Comments + Permissions + File Storage (for `email_outbox`) |
+| **14** | **Onboarding** | Setup Wizard: Profile → Create/Join workspace → Invite teammates → Choose template · 5-step Tooltip Tour · Contextual Hints (one-time, dismissable) · `user_hint_states` + `user_preferences` tables | All user-facing features above |
+| **15** | **Orbit Admin** | User management: view, ban/unban, impersonate, revoke sessions · Workspace management: view all, force-delete · Template management: create/edit/publish built-in templates · Platform analytics · append-only `platform_audit_log` (one row per mutation, never deleted) | Auth + Workspace + Templates |
+| **16** | **Testing + CI/CD** | Vitest unit tests (business logic, permission CTE, job handlers) · Vitest integration tests (API routes + real PostgreSQL) · Playwright E2E (sign-up → onboard → page → editor → database → search → comment → notification) · CI pipeline: push → lint + test → deploy · `EXPLAIN ANALYZE` review on permission CTEs + FTS queries | All features |
 
 ---
 
