@@ -7,9 +7,9 @@ The single most important principle: **access control is enforced in the databas
 ## Authentication
 
 - **Passwordless, magic-link only** (Better Auth). No passwords, no OAuth/social in the MVP — fewer credential-handling surfaces to secure.
-- **Magic-link tokens are short-lived and single-use.** A token is deleted the moment it's consumed; expired/unused token expiry is handled by Better Auth's own lifecycle. A delivered link that's already been used must fail closed.
-
-- **Sessions are database-backed** and revocable. Users can list active devices and revoke any session; expired-session cleanup is handled by Better Auth, not a custom job.
+- **Magic-link tokens are short-lived (15-minute TTL) and single-use.** A token is deleted the moment it's consumed; expired/unused token expiry is handled by Better Auth's own lifecycle. A delivered link that's already been used must fail closed.
+- **Magic-link requests are rate-limited:** 3 requests per 15 minutes per email address and 10 per hour per IP address. All responses — including rate-limited and non-existent-email cases — return the same generic message to prevent email enumeration.
+- **Sessions are database-backed, have a 7-day sliding TTL, and are revocable.** Each use of a valid session token renews its expiry. Users can list active devices and revoke any session; TTL-based cleanup is handled by Better Auth, not a custom job.
 - **The Better Auth ↔ schema column mapping is locked once** in `lib/auth/` (see the mapping note in [DATABASE-PLAN.md](../DATABASE-PLAN.md)). Never rename auth columns after sessions/accounts exist.
 
 ## Authorization (the core)
@@ -47,7 +47,8 @@ Two layers: **workspace role** (Admin / Editor / Viewer) and **page-level permis
 ## Forward-looking (post-MVP, document now so it's not forgotten)
 
 - **Outbound webhooks (Phase 3)** — sign payloads (HMAC), guard against **SSRF** by re-resolving the destination URL on every delivery and blocking private/loopback/link-local ranges, and auto-disable flapping endpoints.
-- **Public API + API keys (Phase 3)** — scoped keys, the same SQL-level permission enforcement as the web app.
+- **Public API + API keys (Phase 3)** — scoped keys, per-key rate limits, the same SQL-level permission enforcement as the web app.
+- **Rate limiting (extended)** — public-link access and (Phase 3) API key endpoints should be rate-limited per-IP; magic-link rate limiting is already enforced in Phase 1 (see Authentication above).
 
 ---
 
