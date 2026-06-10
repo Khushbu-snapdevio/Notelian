@@ -333,8 +333,8 @@ Template Button: {
 7. Markdown shortcuts only trigger at the start of an empty block — they do not activate mid-sentence.
 8. The slash command menu dismisses automatically if the user clicks outside or presses Escape.
 9. All block types behave identically whether the block is on a page or inside a database entry.
-11. **Maximum block nesting depth is 10 levels** (the length of the `parent_block_id` chain from a leaf block to the page root). The ProseMirror schema must enforce this limit — dragging a block deeper than level 10 or pressing `Tab` past level 10 is silently blocked (the block stays at depth 10 rather than going deeper). A Columns block at depth 1 counts as one level; its column-container children are depth 2; blocks inside columns start at depth 3.
 10. Deleting a file block (Image, Video, Audio, File) does **not** immediately remove the stored file — undo (`Ctrl+Z`) and Version History must still be able to restore the block with its media intact. The stored file is removed later by a cleanup job, once no active block references it and it has aged out of the 7-day Version History window.
+11. **Maximum block nesting depth is 10 levels** (the length of the `parent_block_id` chain from a leaf block to the page root). The ProseMirror schema must enforce this limit — dragging a block deeper than level 10 or pressing `Tab` past level 10 is silently blocked (the block stays at depth 10 rather than going deeper). A Columns block at depth 1 counts as one level; its column-container children are depth 2; blocks inside columns start at depth 3.
 
 ---
 

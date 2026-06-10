@@ -145,7 +145,7 @@ Share a page with anyone on the internet — no Notelian account required.
 - **Password protection:** Not supported in Phase 1
 - **Subpages:** Not automatically public — each subpage requires its own public link
 - **Disabling:** Toggle off immediately revokes access. The old URL stops working.
-- **Re-enabling:** A new unique URL is generated (the old URL is permanently invalidated). The new token is a cryptographically random string — use `nanoid(21)` (URL-safe, 21 chars ≈ 126 bits of entropy). The token is stored directly in `public_links.token` (plain, not hashed — it is long enough to resist brute force, and leaking the DB grants no additional access beyond what the token itself would). Rate-limit public-link regeneration to prevent token-fishing.
+- **Re-enabling:** A new unique URL is generated (the old URL is permanently invalidated). The new token is a cryptographically random string — use `nanoid(21)` (URL-safe, 21 chars ≈ 126 bits of entropy). The token is stored directly in `public_links.token` (plain, not hashed — it is long enough to resist brute force, and leaking the DB grants no additional access beyond what the token itself would).
 - **Non-public subpage links:** If a visitor on a public page clicks a link to a subpage that has no public link enabled, they are shown a `"This page is not publicly available"` screen with a `"Sign in to Notelian"` button. It is never a 404 — the page exists, it is simply not shared publicly.
 
 | Public access level | Can read | Can comment | Can edit |

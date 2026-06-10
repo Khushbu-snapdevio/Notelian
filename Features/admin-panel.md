@@ -149,6 +149,24 @@ All Orbit Admin endpoints require `is_platform_admin = true` on the authenticate
 |--------|----------|-------------|
 | GET | `/api/orbit/audit` | List audit trail entries (paginated, filterable) |
 
+### Analytics
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/orbit/analytics` | Get aggregated platform analytics (signups, activation rate, feature usage, notification open rate, search usage) |
+
+### Template Management
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/orbit/templates` | List all built-in templates (paginated) |
+| POST | `/api/orbit/templates` | Create a new built-in template |
+| GET | `/api/orbit/templates/:id` | Get template detail and content |
+| PATCH | `/api/orbit/templates/:id` | Update template name, description, category, or content |
+| POST | `/api/orbit/templates/:id/publish` | Publish a template (sets `status = published`) |
+| POST | `/api/orbit/templates/:id/unpublish` | Unpublish a template (sets `status = draft`) |
+| DELETE | `/api/orbit/templates/:id` | Permanently delete a template |
+
 ---
 
 ## UI Screens

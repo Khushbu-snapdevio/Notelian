@@ -501,7 +501,7 @@ Fixed limits to enforce in code, collected from across the feature specs:
 | Stacked sort rules per view | 5 | Databases |
 | Recently visited | 10 recent (Favorites are uncapped) | Navigation |
 | Undo history | 200 steps (per session) | Editor |
-| Magic-link requests | **3 / 15 min per email · 10 / hour per IP** (throttled; same generic response when limited) | Auth |
+
 | Magic-link token validity | 15 minutes, single-use | Auth |
 
 ---
