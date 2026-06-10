@@ -145,7 +145,7 @@ Share a page with anyone on the internet — no Notelian account required.
 - **Password protection:** Not supported in Phase 1
 - **Subpages:** Not automatically public — each subpage requires its own public link
 - **Disabling:** Toggle off immediately revokes access. The old URL stops working.
-- **Re-enabling:** A new unique URL is generated (the old URL is permanently invalidated)
+- **Re-enabling:** A new unique URL is generated (the old URL is permanently invalidated). The new token is a cryptographically random string — use `nanoid(21)` (URL-safe, 21 chars ≈ 126 bits of entropy). The token is stored directly in `public_links.token` (plain, not hashed — it is long enough to resist brute force, and leaking the DB grants no additional access beyond what the token itself would). Rate-limit public-link regeneration to prevent token-fishing.
 - **Non-public subpage links:** If a visitor on a public page clicks a link to a subpage that has no public link enabled, they are shown a `"This page is not publicly available"` screen with a `"Sign in to Notelian"` button. It is never a 404 — the page exists, it is simply not shared publicly.
 
 | Public access level | Can read | Can comment | Can edit |
@@ -167,6 +167,15 @@ Guests are external users (not workspace members) who are invited to access spec
 4. Click `"Invite"` — an invitation email is sent
 
 The invitation link expires in **7 days**. If not accepted, the inviting user must resend.
+
+### Guest invitation acceptance flow
+
+1. An email is sent with a link: `GET /invite/guest/:token`
+2. The server looks up the `guest_invitations` row by `token`; rejects if `expires_at` is in the past or `accepted_at` is already set.
+3. If the guest has no Notelian account, they complete a magic-link sign-in with their invited email (auto-creates the account).
+4. Once authenticated, the server creates (or upserts) a `page_permissions` row: `(page_id, user_id, access_level)` matching the invitation.
+5. Sets `guest_invitations.accepted_at = now()`.
+6. Redirects the guest to the shared page directly — no workspace sidebar, no onboarding wizard (per [onboarding.md](onboarding.md) business rule 4).
 
 ### Guest limitations
 
@@ -262,7 +271,7 @@ GuestInvitation
 
 ## Business Rules
 
-1. Workspace roles are the **ceiling** of permissions — page-level permissions can restrict but never expand a member's workspace role. (A Viewer is read-only on every page; an Editor can be granted up to Full Access.)
+1. Workspace roles are the **ceiling** of permissions — page-level permissions can restrict but never expand a member's workspace role. (A Viewer is read-only on every page; an Editor can be granted up to Full Access.) **Enforcement point:** the `POST /api/pages/:id/permissions` handler and its equivalent server action must look up the target user's `workspace_members.role` before writing the `page_permissions` row, and cap `access_level` to: `can_view` if Viewer, `can_edit` if Editor, any level if Admin. If the submitted `access_level` exceeds the ceiling, silently downgrade it to the ceiling value rather than returning an error.
 2. A workspace Admin has implicit access to all non-private pages, regardless of page-level settings.
 3. Private pages are completely hidden from all other users — Admins cannot discover private page content through any in-product UI.
 4. Subpages inherit the parent's permissions by default unless the subpage has custom permissions explicitly set.
@@ -271,6 +280,7 @@ GuestInvitation
 7. A guest can only access the specific page(s) they were invited to — no other workspace content is visible.
 8. Removing a member from a page revokes their explicit access. They fall back to inherited permissions from the parent, or no access if none applies.
 9. Only users with **Full Access** on a page can manage that page's permissions, share it externally, or set it to private.
+10. Guest invitation emails are normalized to **lowercase** before processing and storage. Duplicate invitations (same lowercased email + same page) are rejected with `409 Conflict` if an unexpired, unaccepted `guest_invitations` row already exists for that email+page, or if a `page_permissions` row already exists for a user with that email. A workspace member cannot use their own registered email address as a guest invite target.
 
 ---
 

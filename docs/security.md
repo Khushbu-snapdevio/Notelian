@@ -8,6 +8,7 @@ The single most important principle: **access control is enforced in the databas
 
 - **Passwordless, magic-link only** (Better Auth). No passwords, no OAuth/social in the MVP — fewer credential-handling surfaces to secure.
 - **Magic-link tokens are short-lived and single-use.** A token is deleted the moment it's consumed; expired/unused token expiry is handled by Better Auth's own lifecycle. A delivered link that's already been used must fail closed.
+- **Magic-link requests are rate-limited in MVP** — 3 requests / 15 min per email and 10 / hour per IP. This is the only sign-in path, so the endpoint must be throttled against email-bombing, SMTP-cost abuse, and timing-based enumeration. Throttled responses return the same generic message as a valid request (see [authentication.md](../Features/authentication.md#security-considerations)).
 - **Sessions are database-backed** and revocable. Users can list active devices and revoke any session; expired-session cleanup is handled by Better Auth, not a custom job.
 - **The Better Auth ↔ schema column mapping is locked once** in `lib/auth/` (see the mapping note in [DATABASE-PLAN.md](../DATABASE-PLAN.md)). Never rename auth columns after sessions/accounts exist.
 
@@ -16,7 +17,7 @@ The single most important principle: **access control is enforced in the databas
 Two layers: **workspace role** (Admin / Editor / Viewer) and **page-level permission** (Full Access / Can Edit / Can Comment / Can View).
 
 - **Effective permission is resolved by a single recursive CTE** that walks `parent_id` up to the first explicit `page_permissions` row, then falls back to `workspaces.default_page_access`. One query — never an N+1 walk in application code (Phase-1 decision #3).
-- **Private-page short-circuit.** When `pages.is_private = true`, inheritance and the workspace default are skipped — only the page creator and explicit grants apply, **and workspace Admins are denied too.** Honor this in the resolver, not as a special case sprinkled across callers.
+- **Private-page short-circuit.** When `pages.is_private = true`, inheritance and the workspace default are skipped — only the page creator and explicit grants apply, **and workspace Admins are denied too.** Honor this in the resolver, not as a special case sprinkled across callers. The one exception: **Platform Admins** (`is_platform_admin = true`) can see private page **titles only** (never content) via Orbit Admin (`/orbit`) for compliance and moderation — this is enforced by a separate Orbit-specific query that returns only `pages.title` and never exposes `blocks` or `property_values`. This capability is not available to workspace Admins through any in-product path.
 - **Filtering happens in SQL.** Every list/search/tree query joins the permission resolution so restricted rows never leave the database. Fetching broadly and filtering in JS is a **BOLA (Broken Object-Level Authorization)** vulnerability — the restricted rows have already left the trust boundary.
 - **Use the shared auth helpers** in the documented order: `requireSession` → `requireWorkspaceMember` → `requirePagePermission`. Never reimplement a permission check inline (Rule 3).
 
@@ -47,7 +48,7 @@ Two layers: **workspace role** (Admin / Editor / Viewer) and **page-level permis
 
 - **Outbound webhooks (Phase 3)** — sign payloads (HMAC), guard against **SSRF** by re-resolving the destination URL on every delivery and blocking private/loopback/link-local ranges, and auto-disable flapping endpoints.
 - **Public API + API keys (Phase 3)** — scoped keys, per-key rate limits, the same SQL-level permission enforcement as the web app.
-- **Rate limiting** — magic-link requests, public-link access, and (later) API calls should be rate-limited to resist abuse.
+- **Rate limiting** — magic-link rate limiting is already in MVP (see Authentication above). Public-link access rate limiting and API-call rate limiting are post-MVP (Phase 3).
 
 ---
 

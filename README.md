@@ -291,7 +291,7 @@ Full plan in [DATABASE-PLAN.md](DATABASE-PLAN.md). Core tables by domain:
 | Pages & content | `pages`, `page_closure`, `page_versions`, `blocks` |
 | Databases | `database_views`, `database_properties`, `property_values` |
 | Sharing | `page_permissions`, `public_links`, `guest_invitations` |
-| Collaboration | `comments`, `notifications`, `notification_preferences` |
+| Collaboration | `comments`, `notifications`, `notification_preferences`, `email_outbox` |
 | Search | `search_index` |
 | Templates & files | `templates`, `file_uploads`, `workspace_storage_usage` |
 | Per-user state | `user_preferences`, `user_hint_states`, `user_favorites`, `user_recently_visited` |

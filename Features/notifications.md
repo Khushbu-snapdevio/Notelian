@@ -33,7 +33,7 @@ Notifications keep users informed about activity that involves them — @mention
 | A guest invite you sent is accepted | The inviting user | `guest_accepted` |
 | A trashed page is 3 days from permanent deletion | The user who deleted the page and the page creator | `trash_warning` |
 
-> These ten triggers cover all nine `notification_type` enum values in [DATABASE-PLAN.md](../DATABASE-PLAN.md) (both `@mention` rows map to `mention`).
+> The table has **ten trigger rows** but only **nine `notification_type` enum values** — because both "@mention in a comment" and "@mention in page content" produce `type = 'mention'`. They differ only in where the mention occurs (comment vs block), but the notification row stores the same type. The `source_id` field (pointing to the comment or block) distinguishes them in the UI.
 
 ---
 
@@ -251,11 +251,28 @@ Notification
 │                        access_granted | workspace_invite | guest_accepted |
 │                        trash_warning)
 ├── page_id             (foreign key → Page)
-├── source_id           (uuid — ID of the comment, block, etc. that triggered it)
+├── source_id           (uuid — ID of the entity that triggered it; see mapping below)
 ├── content_snippet     (string — up to 100 chars of relevant content)
 ├── is_read             (boolean, default: false)
 ├── read_at             (timestamp, nullable)
 ├── created_at          (timestamp)
+
+**`source_id` mapping by `type`:**
+
+| `type` | `source_id` points to |
+|--------|----------------------|
+| `mention` (in a comment) | `comments.id` — the comment containing the @mention |
+| `mention` (in page content) | `blocks.id` — the block containing the @mention |
+| `comment` | `comments.id` — the new comment on the page |
+| `reply` | `comments.id` — the reply comment (not the thread root) |
+| `resolved` | `comments.id` — the thread root comment |
+| `reopened` | `comments.id` — the thread root comment |
+| `access_granted` | `page_permissions.id` — the grant row |
+| `workspace_invite` | `workspace_members.id` — the pending member row |
+| `guest_accepted` | `guest_invitations.id` — the accepted invitation row |
+| `trash_warning` | `pages.id` — the trashed page |
+
+> For `type = 'mention'`, the notification center distinguishes comment mentions from block mentions by checking whether `source_id` resolves to a `comments` row or a `blocks` row. Both display the same mention card but the "Go to source" action navigates differently (comment thread vs. block highlight).
 
 NotificationPreference
 ├── id                  (uuid, primary key)
@@ -300,7 +317,7 @@ NotificationPreference
 7. Changing email frequency takes effect from the next scheduled delivery cycle.
 8. Real-time SSE delivery is best-effort. The client auto-reconnects on connection drop and falls back to polling `GET /api/notifications` if the stream is unavailable; notifications are always available in the Notification Center regardless of SSE delivery status.
 9. Email delivery uses the `email_outbox` outbox pattern — the outbox row `id` is the SMTP `Message-ID`, providing provider-level dedup. A `failed` row is never automatically resent; an operator must inspect and re-queue manually.
-10. The `cleanup-email-outbox` job sweeps rows stuck in `sending` > 10 minutes to `failed` and purges `sent` rows older than 30 days. Never delete a `failed` row without operator sign-off.
+10. The `cleanup-email-outbox` job sweeps rows stuck in `sending` > 10 minutes to `failed` and purges `sent` rows where `updated_at < NOW() - INTERVAL '30 days'`. Using `updated_at` (not `created_at`) ensures the 30-day retention counts from when the email was actually delivered, not from when it was first queued. Never delete a `failed` row without operator sign-off.
 
 ---
 

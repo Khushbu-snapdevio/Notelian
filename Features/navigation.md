@@ -107,10 +107,12 @@ Hierarchical display of all pages in the workspace.
 ### 6. Sidebar Filter
 
 - A search/filter input appears at the top of the page tree on hover or focus
-- Typing filters the visible page tree in real time (title match only)
-- Non-matching pages and their parents are hidden
+- Typing filters the visible page tree in real time (**title match only** — not block content)
+- Match is **case-insensitive substring**: `"eng"` matches `"Engineering"`, `"Design"` does not
+- A page that matches keeps its full ancestor chain visible (parents are shown even if they don't match, so the user sees where the result lives)
+- Non-matching leaf pages (and collapsed branches with no matching descendants) are hidden
 - Clearing the filter restores the full tree
-- This is a local filter — it does not open global search
+- This is a local, client-side filter — it does not trigger the search API or open the global search dialog
 
 ---
 

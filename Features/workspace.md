@@ -145,24 +145,35 @@ Accessible by Admin only.
 
 ```
 Workspace
-├── id                  (uuid, primary key)
-├── name                (string, required)
-├── slug                (string, unique — used in URLs)
-├── icon                (string — emoji character or image URL, nullable)
-├── created_by          (user_id, foreign key → User)
-├── created_at          (timestamp)
-└── updated_at          (timestamp)
+├── id                    (uuid, primary key)
+├── name                  (string, required)
+├── slug                  (string, unique — used in URLs)
+├── icon                  (string — emoji character or image URL, nullable)
+├── default_page_access   (enum: private | shared, default: shared — affects new pages only)
+├── invite_link_token     (string, unique, nullable — current active invite-link token)
+├── invite_link_active    (boolean, default: false)
+├── invite_link_role      (enum: admin | editor | viewer, default: editor)
+├── created_by            (user_id, foreign key → User, ON DELETE SET NULL)
+├── created_at            (timestamp)
+└── updated_at            (timestamp)
 
 WorkspaceMember
-├── id                  (uuid, primary key)
-├── workspace_id        (foreign key → Workspace)
-├── user_id             (foreign key → User)
-├── role                (enum: admin | editor | viewer)
-├── status              (enum: active | invited)
-├── invited_by          (user_id, nullable)
-├── joined_at           (timestamp, nullable)
-└── created_at          (timestamp)
+├── id                    (uuid, primary key)
+├── workspace_id          (foreign key → Workspace)
+├── user_id               (foreign key → User, nullable — null for pending email invites)
+├── role                  (enum: admin | editor | viewer, default: editor)
+├── status                (enum: active | invited)
+├── invited_email         (string, nullable — the email address the invite was sent to)
+├── invite_token          (string, unique, nullable — single-use invite acceptance token)
+├── invite_expires        (timestamp, nullable — 7 days from invite creation)
+├── invited_by            (user_id, nullable)
+├── joined_at             (timestamp, nullable)
+└── created_at            (timestamp)
 ```
+
+> `user_id` on `WorkspaceMember` is nullable for pending email invites — the account is created (and the row updated with the new `user_id`) on the first magic-link sign-in after invitation acceptance.
+
+> **Removed member** — the membership row is permanently deleted (there is no `removed` status value). The `invite_link_token` is **automatically regenerated** (new UUID, same active/inactive state) in the same transaction as the membership delete — this is mandatory, not optional. Email invite tokens are single-use and are cleared on acceptance, so they pose no re-join risk after use.
 
 ---
 
@@ -204,12 +215,12 @@ WorkspaceMember
 3. Admin role cannot be removed — it can only be transferred to another member.
 4. Deleting a workspace is irreversible and requires explicit name confirmation.
 5. Invite links default to granting the **Editor** role.
-6. Removing a member does not delete their created pages — it only revokes their access.
+6. Removing a member does not delete their created pages — it only revokes their access. When a member is removed, the membership row is permanently deleted. **The workspace invite link token is automatically regenerated (new UUID) at the moment of removal** — the `DELETE /api/workspaces/:id/members/:userId` handler regenerates `invite_link_token` in the same transaction as the membership delete, so the removed user cannot silently rejoin via the old link. If the Admin wants to let the removed user back in they must send a new explicit email invitation. Email invite tokens are single-use and expire after 7 days, so they are not a re-join vector once used or expired.
 7. Workspace URL slug must be unique across the platform.
 8. Email invites expire after 7 days if not accepted.
 9. Users sign in via magic link, which verifies their email on first use — so there is no unverified-account state, and invites entered during the onboarding wizard are sent immediately.
 10. Guest users (invited to specific pages) are not full workspace members and are listed separately.
-11. New pages follow the workspace's **Default Page Access** setting, which is `Shared` by default. Changing it applies only to pages created afterward — existing pages are not modified. Any individual page can still be made private regardless of the workspace default.
+11. New pages follow the workspace's **Default Page Access** setting, which is `Shared` by default. Changing it applies only to pages created afterward — existing pages are not modified. Any individual page can still be made private regardless of the workspace default. **For subpages:** each subpage evaluates the workspace default independently at creation time (subpages are not exempt). **For duplicated pages:** the duplicate inherits the source page's `is_private` value directly — the workspace default is NOT applied to duplicates, so a private page duplicated remains private regardless of the current default.
 
 ---
 

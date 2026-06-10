@@ -62,7 +62,7 @@ On creation:
 
 - Click the icon area to open the icon picker
 - **Emoji picker:** search by name or browse categories (all standard emoji)
-- **Image upload:** upload a custom square image (max 1 MB)
+- **Image upload:** upload a custom square image (max 1 MB, JPEG/PNG/WebP). Uses the same pre-signed upload flow as all other file uploads — `POST /api/uploads/sign` with `{ kind: "page_icon", pageId, size, mimeType }` → `PUT {uploadUrl}` → `POST /api/uploads/confirm`. The returned `fileUrl` is stored in `pages.icon`.
 - **Remove icon:** option to remove the icon entirely
 - Icon is displayed in the sidebar page tree, breadcrumbs, and search results
 
@@ -212,6 +212,10 @@ Page
 ├── short_id            (string, unique — 7-character nanoid, used in public URLs)
 ├── workspace_id        (foreign key → Workspace)
 ├── parent_id           (foreign key → Page, nullable — null = top-level)
+├── kind                (enum: page | database | entry, default: page)
+├── database_id         (foreign key → Page, nullable — set when kind=entry)
+├── default_view_id     (uuid, nullable — set when kind=database; deferred FK → database_views.id)
+├── order_index         (integer — sibling order within parent, used for sidebar drag-and-drop)
 ├── title               (string, default: "Untitled")
 ├── icon                (string — emoji or image URL, nullable)
 ├── cover_url           (string — image URL, nullable)
@@ -220,16 +224,18 @@ Page
 ├── font_family         (enum: default | serif | mono, default: default)
 ├── is_small_text       (boolean, default: false)
 ├── is_locked           (boolean, default: false)
+├── is_private          (boolean, default: false)
 ├── is_deleted          (boolean, default: false)
 ├── deleted_at          (timestamp, nullable)
+├── deleted_by          (user_id, foreign key, nullable — ON DELETE SET NULL; who moved the page to Trash)
+├── trash_warning_sent  (boolean, default: false — prevents duplicate 3-day warnings)
 ├── created_by          (user_id, foreign key, nullable — ON DELETE SET NULL; null = "Former Member")
+├── last_edited_by      (user_id, foreign key, nullable — ON DELETE SET NULL)
 ├── created_at          (timestamp)
 └── updated_at          (timestamp)
 ```
 
 ---
-
-```
 
 ```
 PageVersion
@@ -250,7 +256,7 @@ Versions are created automatically on each auto-save (debounced — one version 
 | Job | Schedule | Description |
 |-----|----------|-------------|
 | `auto-delete-expired-trash` | Daily at 02:00 UTC | Permanently deletes pages where `is_deleted = true` and `deleted_at` exceeds the 30-day trash retention. Cascades to subpages and queues object-storage file deletion for all file blocks on those pages. |
-| `warn-expiring-trash` | Daily at 02:00 UTC | For pages within 7 days of the 30-day auto-deletion deadline, sets a flag so the warning banner appears when the page is viewed from Trash. At 3 days remaining, enqueues a one-time auto-deletion warning notification (in-app + email) to the page's deleter and creator. |
+| `warn-expiring-trash` | Daily at 02:00 UTC | **7-day banner:** the UI derives this at render time — no DB flag needed; condition is `deleted_at <= NOW() - INTERVAL '23 days'`. **3-day notification:** queries `WHERE is_deleted = true AND deleted_at <= NOW() - INTERVAL '27 days' AND deleted_at > NOW() - INTERVAL '30 days' AND trash_warning_sent = false`; for each result atomically sets `trash_warning_sent = true` (guarded UPDATE to handle concurrent runs) then enqueues in-app + email notification to the page's deleter and creator. |
 | `auto-delete-expired-versions` | Daily | Prunes page versions older than the 7-day Version History retention window. |
 
 ---
