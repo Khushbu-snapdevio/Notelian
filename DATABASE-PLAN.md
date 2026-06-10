@@ -767,7 +767,7 @@ Invariants the database **cannot** express as constraints. Enforce each in a ser
 
 **Auth & account** ([authentication.md](Features/authentication.md))
 - Magic-link tokens are single-use and expire after 15 min; invalidate immediately on use.
-- **Rate-limit magic-link requests** — it's the only sign-in path, so an unthrottled endpoint is an email-bombing / SMTP-cost / enumeration-timing vector. Enforce per-email **3 requests / 15 min** and per-IP **10 requests / hour** (Better Auth rate-limit config or middleware). Throttled responses must still return the same generic message (no enumeration).
+
 - A banned user's sessions are revoked immediately; block re-auth until unbanned.
 - A user cannot delete their account while sole `admin` of any workspace — require transfer first.
 - Magic-link requests always return the same response whether or not the email exists (no enumeration).

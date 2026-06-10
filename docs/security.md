@@ -8,7 +8,7 @@ The single most important principle: **access control is enforced in the databas
 
 - **Passwordless, magic-link only** (Better Auth). No passwords, no OAuth/social in the MVP — fewer credential-handling surfaces to secure.
 - **Magic-link tokens are short-lived and single-use.** A token is deleted the moment it's consumed; expired/unused token expiry is handled by Better Auth's own lifecycle. A delivered link that's already been used must fail closed.
-- **Magic-link requests are rate-limited in MVP** — 3 requests / 15 min per email and 10 / hour per IP. This is the only sign-in path, so the endpoint must be throttled against email-bombing, SMTP-cost abuse, and timing-based enumeration. Throttled responses return the same generic message as a valid request (see [authentication.md](../Features/authentication.md#security-considerations)).
+
 - **Sessions are database-backed** and revocable. Users can list active devices and revoke any session; expired-session cleanup is handled by Better Auth, not a custom job.
 - **The Better Auth ↔ schema column mapping is locked once** in `lib/auth/` (see the mapping note in [DATABASE-PLAN.md](../DATABASE-PLAN.md)). Never rename auth columns after sessions/accounts exist.
 
@@ -47,8 +47,7 @@ Two layers: **workspace role** (Admin / Editor / Viewer) and **page-level permis
 ## Forward-looking (post-MVP, document now so it's not forgotten)
 
 - **Outbound webhooks (Phase 3)** — sign payloads (HMAC), guard against **SSRF** by re-resolving the destination URL on every delivery and blocking private/loopback/link-local ranges, and auto-disable flapping endpoints.
-- **Public API + API keys (Phase 3)** — scoped keys, per-key rate limits, the same SQL-level permission enforcement as the web app.
-- **Rate limiting** — magic-link rate limiting is already in MVP (see Authentication above). Public-link access rate limiting and API-call rate limiting are post-MVP (Phase 3).
+- **Public API + API keys (Phase 3)** — scoped keys, the same SQL-level permission enforcement as the web app.
 
 ---
 

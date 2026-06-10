@@ -37,7 +37,7 @@ Detailed per-subsystem docs live under [docs/architecture/](docs/architecture/) 
 - **Processes, worker scaling, route groups, service layer, the four registries** → [docs/architecture/backend-overview.md](docs/architecture/backend-overview.md)
 - **Background jobs & queues** — every pg-boss job, schedule, retry policy, idempotency → [docs/architecture/background-jobs.md](docs/architecture/background-jobs.md)
 - **Database schema** — every table, the closure table, single-table page inheritance, JSONB blocks, FTS triggers, the split `lib/db/schema/` layout → [DATABASE-PLAN.md](DATABASE-PLAN.md)
-- **Security model** — permission resolution / BOLA, magic-link safety, file-upload safety, public-link & guest access, rate limiting → [docs/security.md](docs/security.md)
+- **Security model** — permission resolution / BOLA, magic-link safety, file-upload safety, public-link & guest access → [docs/security.md](docs/security.md)
 - **API endpoints** — each `Features/*.md` spec lists the endpoints for its feature
 
 ## Conventions
