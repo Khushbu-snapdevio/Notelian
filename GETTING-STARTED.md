@@ -445,26 +445,11 @@ All async/scheduled work runs through pg-boss in the **worker** process (§8). C
 | `auto-delete-expired-versions` | Daily | Pages — prune page versions outside the 7-day retention window |
 | `send-email-digest` | Daily 08:00 (user TZ) / weekly | Notifications — send daily/weekly digest of unread items |
 | `cleanup-old-notifications` | Nightly | Notifications — permanently delete notifications older than 90 days |
-| `send-notification-email` | On event | Notifications — deliver per-event emails via SMTP; writes to `email_outbox` outbox table for idempotent delivery |
-| `cleanup-email-outbox` | Nightly | Notifications — sweep `sending` rows stuck > 10 min → `failed`; delete `sent` rows older than 30 days |
-
-### 9.2 Queue Options (per job)
-
-Every job must have an entry in `QUEUE_OPTIONS: Record<JobName, PgBossQueueOptions>`. Key fields:
-
-| Job | `retryLimit` | `retryDelay` (s) | `expireInSeconds` | `policy` |
-|-----|-------------|-----------------|-------------------|---------|
-| `cleanup-stale-uploads` | 2 | 60 | 1800 | `exclusive` |
-| `cleanup-orphaned-media` | 2 | 120 | 7200 | `exclusive` |
-| `sync-storage-usage` | 2 | 60 | 3600 | `exclusive` |
-| `delete-user-private-pages` | 3 | 60 | 3600 | — |
-| `auto-delete-expired-trash` | 2 | 120 | 3600 | `exclusive` |
-| `warn-expiring-trash` | 2 | 120 | 3600 | `exclusive` |
-| `auto-delete-expired-versions` | 2 | 60 | 3600 | `exclusive` |
-| `send-email-digest` | 2 | 300 | 3600 | `exclusive` |
-| `cleanup-old-notifications` | 2 | 60 | 3600 | `exclusive` |
-| `send-notification-email` | 3 | 60 | 1800 | — |
-| `cleanup-email-outbox` | 2 | 60 | 3600 | `exclusive` |
+| `send-notification-email` | On event / scheduled | Notifications — deliver per-event emails; retries up to 3× with exponential backoff |
+| `send-workspace-invite` | On demand | Workspace — send member invite email with 7-day expiry token |
+| `delete-workspace` | On demand | Workspace — hard-delete all workspace data asynchronously after Admin confirmation |
+| `notify-storage-threshold` | Daily | Workspace — email all Admins when workspace storage first crosses 90 % |
+| `expire-invitations` | Daily | Workspace — cleanup audit sweep of expired `workspace_members` invitation rows |
 
 > **`policy: "exclusive"`** on all recurring jobs — a slow tick must **never** overlap the next one. pg-boss enforces at-most-one-in-flight per queue via a unique index; the next tick is silently rejected while a previous run is still `active`. Accept a skipped tick over parallel execution — idempotent handlers self-heal on the next interval.
 

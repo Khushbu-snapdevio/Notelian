@@ -176,6 +176,18 @@ Binary uploads stored in **S3-compatible object storage served via a CDN** — p
 
 See [Features/file-storage.md](Features/file-storage.md).
 
+### Settings
+
+User and workspace configuration in a single modal — five sections:
+
+- **My Profile** — display name, job title, avatar, email (read-only)
+- **Sessions** — list active devices, revoke individual sessions; logout everywhere
+- **Notifications** — per-channel (in-app / email) and per-frequency (realtime / daily / weekly / off) preferences
+- **Workspace General** — name, icon, default page access, storage usage, danger zone (delete workspace)
+- **Workspace Members** — invite by email, change roles, remove members, manage invite link
+
+See [Features/settings.md](Features/settings.md).
+
 ---
 
 ## Architecture

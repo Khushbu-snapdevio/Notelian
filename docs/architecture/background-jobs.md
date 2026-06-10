@@ -86,6 +86,15 @@ the feature spec that owns the job's behavior.
 | `warn-expiring-trash` | Daily 02:00 UTC | Two queries per run: (1) **Banner flag** — no DB write needed; the UI derives the 7-day banner from `deleted_at <= NOW() - INTERVAL '23 days'` at render time. (2) **3-day notification** — `SELECT … FROM pages WHERE is_deleted = true AND deleted_at <= NOW() - INTERVAL '27 days' AND deleted_at > NOW() - INTERVAL '30 days' AND trash_warning_sent = false`; for each matching page, atomically `UPDATE pages SET trash_warning_sent = true WHERE id = :id AND trash_warning_sent = false` (check return count to guard against concurrent runs), then enqueue the in-app + email notification to the page's deleter and creator |
 | `auto-delete-expired-versions` | Daily | Prune page versions outside the retention window |
 
+### Workspace & Members — [settings.md](../../Features/settings.md), [workspace.md](../../Features/workspace.md)
+
+| Job | Trigger | Purpose |
+| --- | --- | --- |
+| `send-workspace-invite` | On demand — Admin invites member by email | Send the workspace invite email with a 7-day expiry token via Nodemailer; retries up to 3× with exponential backoff |
+| `delete-workspace` | On demand — Admin confirms workspace deletion | Hard-delete all workspace data (pages, blocks, files, members, storage objects) asynchronously; cancels all pending workspace-scoped jobs before purging |
+| `notify-storage-threshold` | Daily | Send an email to all workspace Admins the first time storage crosses 90 % — does not re-fire until the workspace drops below 90 % and crosses it again |
+| `expire-invitations` | Daily | Mark `workspace_members` invitation rows (`status = invited`) as cleanly expired when `invite_expires` has passed; tokens already return 410 based on the timestamp — this is audit cleanup only |
+
 ### Notifications — [notifications.md](../../Features/notifications.md)
 
 | Job | Trigger | Purpose |
@@ -104,6 +113,8 @@ the feature spec that owns the job's behavior.
 | `cleanup-stale-uploads` | Every 30 min |
 | `cleanup-orphaned-media` | Daily |
 | `sync-storage-usage` | Daily |
+| `notify-storage-threshold` | Daily |
+| `expire-invitations` | Daily |
 | `auto-delete-expired-trash` | Daily 02:00 UTC |
 | `warn-expiring-trash` | Daily 02:00 UTC |
 | `auto-delete-expired-versions` | Daily |

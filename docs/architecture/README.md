@@ -9,6 +9,8 @@ current when the subsystem changes.**
 | [backend-overview.md](backend-overview.md) | The two-process model (Next.js web + pg-boss worker), worker scaling + idempotency rules, `app/` route groups, the `lib/` service-layer map, the reusable UI component library, and the four **registry pieces** (Block, Property, Notification, Job) that the product is assembled from |
 | [background-jobs.md](background-jobs.md) | Complete catalog of every pg-boss job/queue — name, schedule, purpose, retry policy, and idempotency pattern — grouped by domain (notifications, email, search, trash & cleanup, pages & export, storage, auth) |
 
+See also: [../ui-design.md](../ui-design.md) for the UI component library, design tokens, and feature UI patterns that the `components/` layer implements.
+
 ## Why this structure (modeled on Krova)
 
 These docs follow the same split a production project (Krova) uses:
