@@ -265,7 +265,14 @@ Block
 ```
 
 **Content JSONB structure (examples):**
+
+The `text` array in paragraph, heading, quote, callout, to-do, and similar blocks holds a sequence of **inline nodes**. There are two kinds of inline node:
+
+- **Text run** — a plain string with optional marks.
+- **Inline element** — a leaf node with a `type` and `attrs`; has no `text` field.
+
 ```
+// --- Block-level content shapes ---
 Paragraph:       { "text": [{ "text": "Hello", "marks": ["bold"] }] }
 Heading:         { "level": 1, "text": [{ "text": "Title" }] }
 Code Block:      { "language": "typescript", "code": "const x = 1;", "lineNumbers": true }
@@ -274,6 +281,33 @@ To-Do:           { "checked": false, "text": [...] }
 Linked Page:     { "pageId": "<uuid of the target page>" }
 Inline Database: { "databaseId": "<uuid of the database page>", "defaultViewId": "<uuid>" }
 Columns:         { "columnCount": 2 }  // child blocks with parent_block_id form the columns
+// --- Inline node types (appear inside text arrays) ---
+// Text run with marks:
+//   { "text": "Hello", "marks": ["bold", "italic"] }
+//   Valid marks: "bold" | "italic" | "underline" | "strikethrough" | "code" | "highlight" | "textColor"
+//   Link mark carries extra attrs: { "type": "link", "attrs": { "href": "https://..." } }
+
+// @name mention (notifies the user):
+//   { "type": "mention", "attrs": { "userId": "<uuid>", "name": "Sarah Chen" } }
+
+// @page live link (navigates to another page in the workspace):
+//   { "type": "pageMention", "attrs": { "pageId": "<uuid>", "title": "Meeting Notes" } }
+
+// @date formatted reference (renders as a clickable date chip):
+//   { "type": "dateMention", "attrs": { "date": "2026-06-11", "format": "MMM D, YYYY" } }
+
+// Example — paragraph with a mix of runs and inline elements:
+//   {
+//     "text": [
+//       { "text": "Assigned to " },
+//       { "type": "mention", "attrs": { "userId": "<uuid>", "name": "Alice" } },
+//       { "text": " — due " },
+//       { "type": "dateMention", "attrs": { "date": "2026-06-15", "format": "MMM D, YYYY" } },
+//       { "text": ". See " },
+//       { "type": "pageMention", "attrs": { "pageId": "<uuid>", "title": "Sprint Board" } }
+//     ]
+//   }
+
 Template Button: {
                    "label": "+ Add Today's Log",
                    "insertLocation": "below_button",  // "below_button" | "bottom_of_page"

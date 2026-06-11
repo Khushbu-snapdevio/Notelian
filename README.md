@@ -39,7 +39,7 @@ Workspace
 ## Documentation
 
 - **Product specs** — one file per feature in [Features/](Features/)
-- **Engineering reference** — [docs/](docs/): the [backend & reusable-pieces overview](docs/architecture/backend-overview.md), the [background-jobs & queues catalog](docs/architecture/background-jobs.md), and the [security model](docs/security.md)
+- **Engineering reference** — [docs/](docs/): the [backend & reusable-pieces overview](docs/architecture/backend-overview.md), the [background-jobs & queues catalog](docs/architecture/background-jobs.md), the [security model](docs/security.md), and the [UI design system](docs/ui-design.md)
 - **Contributor guide** — [CLAUDE.md](CLAUDE.md)
 - **Setup** — [GETTING-STARTED.md](GETTING-STARTED.md) · **Schema** — [DATABASE-PLAN.md](DATABASE-PLAN.md) · **Plan** — [Features/development-plan.md](Features/development-plan.md)
 
@@ -250,7 +250,7 @@ All handlers are **idempotent** — safe to retry. Every cron job uses `policy: 
 
 | Stream | Events | Access |
 | --- | --- | --- |
-| `GET /api/notifications/stream` | `mention`, `comment-reply`, `thread-resolved`, `access-granted`, `workspace-invite`, `trash-warning` | The authenticated user's own stream |
+| `GET /api/notifications/stream` | `mention`, `comment-reply`, `thread-resolved`, `thread-reopened`, `access-granted`, `workspace-invite`, `guest-accepted`, `trash-warning` | The authenticated user's own stream |
 
 Real-time toast/badge delivery is **best-effort** — the client's `EventSource` auto-reconnects and falls back to polling `GET /api/notifications`, so the Notification Center is always correct regardless of stream health. The SSE route requires a persistent-connection host (see [Phase-1 decision #6](#phase-1-architecture-decisions)).
 
@@ -269,6 +269,8 @@ The product is assembled from named building blocks rather than ad-hoc code: a `
 | **Next.js (App Router)** | UI, routing, React server components, server actions |
 | **TipTap (ProseMirror)** | Block-based rich text editor |
 | **Tailwind CSS** | Utility-first styling |
+| **Radix UI** | Accessible, unstyled UI primitives (Dialog, Popover, Tooltip, etc.) |
+| **react-hook-form + Zod** | Form state management and schema validation (shared client/server) |
 | **KaTeX** | LaTeX equation rendering in editor blocks |
 
 ### Backend
@@ -445,4 +447,4 @@ pnpm worker
 
 ---
 
-*Last updated: 2026-06-09*
+*Last updated: 2026-06-11*

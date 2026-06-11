@@ -4,13 +4,6 @@ How Notelian is put together at the process, route, and module level — and the
 reusable **pieces** the whole product is assembled from. Read this before working
 in `app/`, `lib/`, or `components/`.
 
-> **Modeled on Krova.** Krova documents its building blocks as a *service layer*
-> (`lib/`), a *UI component library* (`components/`), and single-source-of-truth
-> *registries* (e.g. one module that maps every status to its badge). Notelian
-> borrows the same idea: instead of re-implementing block rendering or property
-> handling ad hoc, the product is built from a small set of named pieces and four
-> registries. Learn the pieces once, recognize them everywhere.
-
 ---
 
 ## Two-process model
@@ -100,8 +93,7 @@ exactly one place.
 
 ## Registry pieces
 
-The most important reuse pattern Notelian takes from Krova: instead of `switch`
-statements on a type scattered across the codebase, each "kind of thing" is
+Instead of `switch` statements on a type scattered across the codebase, each "kind of thing" is
 defined **once** in a registry — a map from a type to everything that type needs.
 Adding a new block, property, notification, or job means adding **one entry**, not
 editing ten files.

@@ -9,7 +9,7 @@ The schema is **split one file per domain** under `lib/db/schema/` (not a single
 | Domain | Tables |
 |--------|--------|
 | Auth (Better Auth) | `users`, `sessions`, `accounts`, `verifications` |
-| Workspace | `workspaces`, `workspace_members` |
+| Workspace | `workspaces`, `workspace_members`, `workspace_slug_redirects` |
 | Pages & content | `pages`, `page_closure`, `page_versions`, `blocks` |
 | Databases | `database_views`, `database_properties`, `property_values` |
 | Sharing | `page_permissions`, `public_links`, `guest_invitations` |
@@ -34,19 +34,19 @@ The schema is **split one file per domain** under `lib/db/schema/` (not a single
 - **Database property visibility:** ordering is shared across all views (`database_properties.order_index`), but show/hide is **per-view** (`database_views.hidden_property_ids`). `database_properties.is_hidden` is only the default at creation.
 - **Soft delete:** pages use `is_deleted` + `deleted_at` (30-day Trash); comments use `deleted_at` (placeholder). Author/creator FKs are `ON DELETE SET NULL` → renders as "Former Member".
 - **pg-boss** owns its own tables (job queue) — not defined here.
-- **`uuid().defaultRandom()`** maps to Postgres `gen_random_uuid()` (built in since PG13 — no extension needed). The `tsvector` GIN index is emitted by `pnpm run db:generate`; the FTS **triggers** that populate `search_vector` are hand-written SQL added to the generated migration.
+- **`uuid().defaultRandom()`** maps to Postgres `gen_random_uuid()` (built in since PG13 — no extension needed). The `tsvector` GIN index is emitted by `pnpm db:generate`; the FTS **triggers** that populate `search_vector` are hand-written SQL added to the generated migration.
 
 ---
 
 ## Schema file layout
 
-The schema lives in `lib/db/schema/` — one file per domain, mirroring how a real Drizzle project (and Krova) organizes it. A single 800-line `schema.ts` is hard to navigate and review; splitting by domain keeps each file small and makes diffs readable.
+The schema lives in `lib/db/schema/` — one file per domain. A single 800-line `schema.ts` is hard to navigate and review; splitting by domain keeps each file small and makes diffs readable.
 
 | File | Tables / contents |
 |------|-------------------|
 | `lib/db/schema/types.ts` | Shared `customType` (`tsvector`), the `updatedAt()` helper, and **every `pgEnum`** — imported by the domain files below |
 | `lib/db/schema/auth.ts` | `users`, `sessions`, `accounts`, `verifications` |
-| `lib/db/schema/workspace.ts` | `workspaces`, `workspace_members` |
+| `lib/db/schema/workspace.ts` | `workspaces`, `workspace_members`, `workspace_slug_redirects` |
 | `lib/db/schema/pages.ts` | `pages`, `page_closure`, `page_versions`, `blocks` |
 | `lib/db/schema/databases.ts` | `database_views`, `database_properties`, `property_values` |
 | `lib/db/schema/sharing.ts` | `page_permissions`, `public_links`, `guest_invitations` |
@@ -59,7 +59,7 @@ The schema lives in `lib/db/schema/` — one file per domain, mirroring how a re
 | `lib/db/schema/index.ts` | **Barrel** — `export * from "./auth"`, `"./workspace"`, … for every file above |
 
 **Conventions:**
-- Each domain file imports shared pieces from `./types` (`import { pageKind, updatedAt, tsvector } from "./types"`) and table refs it needs cross-domain (e.g. `pages.ts` imports `workspaces` from `./workspace`).
+- Each domain file imports shared pieces from `./types` (`import { pageKind, updatedAt, tsvector, fileUploadKind } from "./types"`) and table refs it needs cross-domain (e.g. `pages.ts` imports `workspaces` from `./workspace`).
 - **Drizzle relations co-locate with their tables** — each file declares its own `relations(...)` block. The [Relations](#relations-core-graph) section below shows them together only for readability.
 - The app and `drizzle.config.ts` point at the **directory / barrel**, never a single file: `import * as schema from "@/lib/db/schema"`.
 - `drizzle-kit` is configured with `schema: "./lib/db/schema"` so it picks up every file in the folder.
@@ -88,11 +88,11 @@ export const tsvector = customType<{ data: string }>({
 // ranking, and version logic silently go stale. Use `updatedAt()` everywhere
 // a table has an `updated_at` column. (A BEFORE UPDATE trigger is the
 // equivalent if you prefer enforcing it in the DB instead of the ORM.)
-const updatedAt = () =>
+export const updatedAt = () =>
   timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date());
 
 export const workspaceRole     = pgEnum("workspace_role", ["admin", "editor", "viewer"]);
-export const memberStatus      = pgEnum("member_status", ["active", "invited"]);
+export const memberStatus      = pgEnum("member_status", ["active", "invited", "expired"]);
 export const defaultPageAccess = pgEnum("default_page_access", ["private", "shared"]);
 
 export const pageKind   = pgEnum("page_kind", ["page", "database", "entry"]);
@@ -134,6 +134,10 @@ export const templateStatus   = pgEnum("template_status", ["draft", "published"]
 // aggregated into the "entry" row's search_vector by the property_values trigger.
 export const searchSourceType = pgEnum("search_source_type", ["page", "entry", "comment"]);
 export const auditTargetType  = pgEnum("audit_target_type", ["user", "workspace"]);
+
+export const fileUploadKind = pgEnum("file_upload_kind", [
+  "page_cover", "page_icon", "block_media", "user_avatar", "workspace_icon",
+]);
 ```
 
 ## Auth (Better Auth: magic link + admin plugin) — `lib/db/schema/auth.ts`
@@ -176,7 +180,7 @@ export const sessions = pgTable("sessions", {
   userIdx: index("sessions_user_idx").on(t.userId),
 }));
 
-// Better Auth core table — unused for credentials in MVP (passwordless), kept for Phase-3 OAuth/SSO.
+// Better Auth core table — unused for credentials in MVP (passwordless), kept for Phase-4 SSO/SAML.
 export const accounts = pgTable("accounts", {
   id:           uuid("id").primaryKey().defaultRandom(),
   userId:       uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
@@ -223,6 +227,20 @@ export const workspaces = pgTable("workspaces", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: updatedAt(),
 });
+
+// Stores old slugs after a workspace slug change — serves 308 redirects for 30 days.
+// On slug change: INSERT a row here with the old slug, then update workspaces.slug.
+// The Next.js middleware (or a catch-all route) looks up old_slug → current workspace slug
+// and issues a 308. Rows older than 30 days are swept by the delete-workspace job and can
+// also be cleaned up manually; after 30 days the old URL returns 404.
+export const workspaceSlugRedirects = pgTable("workspace_slug_redirects", {
+  id:          uuid("id").primaryKey().defaultRandom(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  oldSlug:     text("old_slug").notNull(),
+  createdAt:   timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  oldSlugIdx: uniqueIndex("workspace_slug_redirects_old_slug_idx").on(t.oldSlug),
+}));
 
 // userId is null for pending email invites (account is created on first magic-link sign-in)
 export const workspaceMembers = pgTable("workspace_members", {
@@ -552,12 +570,8 @@ export const templates = pgTable("templates", {
   workspaceIdx: index("templates_workspace_idx").on(t.workspaceId),
 }));
 
-// kind discriminates what the upload is attached to and how it's quota-counted
-export const fileUploadKind = pgEnum("file_upload_kind", [
-  "page_cover", "page_icon", "block_media", "user_avatar", "workspace_icon",
-]);
-
 // lib/db/schema/files.ts
+// (fileUploadKind enum is defined in types.ts — import it from there)
 export const fileUploads = pgTable("file_uploads", {
   id:            uuid("id").primaryKey().defaultRandom(),
   // null for user_avatar — an avatar is global to the user, not workspace-scoped,
@@ -585,11 +599,13 @@ export const fileUploads = pgTable("file_uploads", {
   ),
 }));
 
-// 1:1 with workspace — 5 GB quota
+// 1:1 with workspace — 5 GB quota. Row is inserted (bytes_used = 0) in the same
+// transaction as workspace creation — never missing when an upload quota check runs.
 export const workspaceStorageUsage = pgTable("workspace_storage_usage", {
-  workspaceId: uuid("workspace_id").primaryKey().references(() => workspaces.id, { onDelete: "cascade" }),
-  bytesUsed:   bigint("bytes_used", { mode: "number" }).notNull().default(0),
-  updatedAt:   updatedAt(),
+  workspaceId:           uuid("workspace_id").primaryKey().references(() => workspaces.id, { onDelete: "cascade" }),
+  bytesUsed:             bigint("bytes_used", { mode: "number" }).notNull().default(0),
+  thresholdNotifiedAt:   timestamp("threshold_notified_at", { withTimezone: true }),  // null = not yet notified; set when 90% email is sent; clear when usage drops below 90%
+  updatedAt:             updatedAt(),
 });
 
 // lib/db/schema/user-state.ts
@@ -777,6 +793,7 @@ Invariants the database **cannot** express as constraints. Enforce each in a ser
 - `admin` role is assigned only via Transfer Ownership — never the role dropdown; admin can't be removed directly.
 - Every user must belong to ≥1 workspace after onboarding (guests excepted).
 - Email invites expire after 7 days; invite-link joins default to `editor`.
+- **`workspace_storage_usage` row must be inserted (`bytes_used = 0`) in the same transaction as workspace creation.** The quota check before issuing a pre-signed upload URL reads this row — a missing row will cause a crash on the first upload.
 
 **Pages & editor** ([pages.md](Features/pages.md), [editor.md](Features/editor.md))
 - Title is never empty — default to `"Untitled"`.
@@ -838,6 +855,7 @@ Invariants the database **cannot** express as constraints. Enforce each in a ser
 - ≤5 custom templates per workspace; only creator or Admin edits a custom template; entries are never saved in `page_snapshot`. ([templates.md](Features/templates.md))
 - Check the **5 GB** workspace quota before issuing a pre-signed URL; record only on `/confirm`; decrement `bytes_used` only when the orphaned-media job actually deletes the object. **`user_avatar` uploads (`workspace_id = null`) are exempt from the quota** — they are global to the user, not workspace-scoped; all other `file_upload_kind` values are workspace-scoped and counted. ([file-storage.md](Features/file-storage.md))
 - `user_recently_visited`: keep only the latest 10 per (user, workspace). ([navigation.md](Features/navigation.md))
+- **Slug change** → INSERT a `workspace_slug_redirects` row with the old slug **before** updating `workspaces.slug`, both in the same transaction. The middleware reads this table to serve 308 redirects. Rows older than 30 days can be deleted. ([settings.md](Features/settings.md))
 - `is_platform_admin` is set only in the DB; the Orbit audit log is append-only; impersonation sessions are marked and capped at 2 h. ([admin-panel.md](Features/admin-panel.md))
 
 ---
@@ -897,9 +915,9 @@ export const db = drizzle(client, { schema, casing: "snake_case" });
 **First run**
 
 ```bash
-pnpm run db:generate      # → drizzle/0000_*.sql
+pnpm db:generate      # → drizzle/0000_*.sql
 # then, in that generated SQL, add by hand the four hand-written SQL blocks below
-pnpm run db:migrate
+pnpm db:migrate
 ```
 
 **Hand-written SQL to add to the generated migration** (add each block verbatim after the Drizzle-generated DDL):
@@ -993,13 +1011,36 @@ CREATE OR REPLACE TRIGGER property_values_search_update
 AFTER INSERT OR UPDATE OF value ON property_values
 FOR EACH ROW EXECUTE FUNCTION notelian_entry_search_upsert();
 
--- Trigger on comments: re-index the comment (comments = D weight).
+-- Trigger on comments: re-index the comment (source_type = 'comment', weight D).
+-- Uses a dedicated function so source_type is set correctly (notelian_search_upsert hardcodes 'page').
+CREATE OR REPLACE FUNCTION notelian_comment_search_upsert() RETURNS trigger AS $$
+BEGIN
+  INSERT INTO search_index (id, workspace_id, source_type, source_id, title, search_vector, page_id, updated_at)
+  SELECT
+    gen_random_uuid(),
+    p.workspace_id,
+    'comment',
+    NEW.id,
+    p.title,
+    setweight(to_tsvector('english', coalesce(NEW.content::text, '')), 'D'),
+    p.id,
+    now()
+  FROM pages p
+  WHERE p.id = NEW.page_id AND p.is_deleted = false
+  ON CONFLICT (source_type, source_id) DO UPDATE
+    SET search_vector = EXCLUDED.search_vector,
+        title = EXCLUDED.title,
+        updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE OR REPLACE TRIGGER comments_search_update
 AFTER INSERT OR UPDATE OF content ON comments
-FOR EACH ROW EXECUTE FUNCTION notelian_search_upsert();
+FOR EACH ROW EXECUTE FUNCTION notelian_comment_search_upsert();
 ```
 
-> **Note:** `notelian_search_upsert()` handles pages/blocks/comments (source_type `page` or `comment`). `notelian_entry_search_upsert()` handles property value changes (source_type `entry`) and aggregates all text-type property values for the entry. Before building search, expand `notelian_search_upsert()` to aggregate **all** block text for the triggering page (not just the triggering row) and produce a properly weighted `tsvector`: title (A), block content (C), comments (D). Both triggers fire per-row so bulk operations (import, mass edit) must batch writes to avoid firing them thousands of times in one transaction (see CLAUDE.md Rule 6).
+> **Note:** `notelian_search_upsert()` re-indexes pages and blocks (source_type `page`). `notelian_entry_search_upsert()` handles property value changes (source_type `entry`). `notelian_comment_search_upsert()` handles comments (source_type `comment`, weight D) — a separate function is required because source_type differs. Before building search, expand `notelian_search_upsert()` to aggregate **all** block text for the triggering page (not just the triggering row) and produce a properly weighted `tsvector`: title (A), block content (C). All triggers fire per-row so bulk operations (import, mass edit) must batch writes to avoid firing them thousands of times in one transaction (see CLAUDE.md Rule 6).
 
 **3. Closure table maintenance — reference SQL patterns (enforce in app transactions)**
 

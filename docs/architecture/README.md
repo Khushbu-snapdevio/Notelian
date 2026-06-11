@@ -11,9 +11,7 @@ current when the subsystem changes.**
 
 See also: [../ui-design.md](../ui-design.md) for the UI component library, design tokens, and feature UI patterns that the `components/` layer implements.
 
-## Why this structure (modeled on Krova)
-
-These docs follow the same split a production project (Krova) uses:
+## Why this structure
 
 - A **single jobs catalog** instead of job definitions scattered across feature
   docs — so anyone can see, in one place, everything the worker does and when.

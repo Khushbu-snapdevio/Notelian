@@ -129,7 +129,6 @@ Each active session is a card showing:
 ### Security Notes
 
 - Sessions have a **7-day sliding TTL** managed by Better Auth — each use of a session token renews the expiry. Idle sessions expire automatically without any user action. The session list shows only non-expired sessions.
-- Magic-link sign-in emails are rate-limited: **3 requests per 15 minutes per email address**, **10 requests per hour per IP address**. After the limit is hit, requests return HTTP 429 and the sign-in form shows "Too many requests. Try again in X minutes."
 - Impersonated sessions (created by platform Admins via Orbit) expire automatically after **2 hours** regardless of activity and are listed with a warning badge.
 
 ---
@@ -169,6 +168,7 @@ Each active session is a card showing:
 
 - Changes are applied on save (single "Save changes" button for this group).
 - Slug change shows a warning: "All existing share links will break. Users will be redirected for 30 days via a server-side 308 redirect from the old slug."
+- **Implementation:** when the slug is saved, the handler inserts a `workspace_slug_redirects` row with the previous slug **in the same transaction** as the `workspaces.slug` update. A Next.js middleware (or catch-all route `GET /[old-slug]/[[...path]]`) looks up `workspace_slug_redirects.old_slug`, resolves the current `workspaces.slug`, and responds with `308 Permanent Redirect` to the new path. Rows are retained for 30 days; after that the URL returns 404.
 
 ### Default Page Access
 
@@ -392,24 +392,28 @@ UserPreferences        ← global per-user, not workspace-scoped; managed via na
 └── updated_at        (timestamp)
 
 UserHintState          ← tracks dismissed onboarding hints; managed via onboarding/feature hints
-├── user_id           (FK → User)
-├── hint_key          (string — e.g., "database_view_tour", "share_panel_hint")
-├── dismissed_at      (timestamp)
-└── PRIMARY KEY (user_id, hint_key)
+├── id           (uuid, primary key)
+├── user_id      (FK → User)
+├── hint_key     (string — e.g., "database_view_tour", "share_panel_hint")
+├── dismissed_at (timestamp)
+└── UNIQUE (user_id, hint_key)
 
 UserFavorite           ← workspace-scoped; managed via navigation sidebar star actions
+├── id            (uuid, primary key)
 ├── user_id       (FK → User)
 ├── page_id       (FK → Page)
 ├── workspace_id  (FK → Workspace)
-├── order_index   (float — for manual reordering)
-└── PRIMARY KEY (user_id, page_id)
+├── order_index   (integer, default: 0 — for manual reordering)
+├── created_at    (timestamp)
+└── UNIQUE (user_id, page_id)
 
 UserRecentlyVisited    ← workspace-scoped; managed automatically on page navigation
+├── id           (uuid, primary key)
 ├── user_id      (FK → User)
 ├── workspace_id (FK → Workspace)
 ├── page_id      (FK → Page)
 ├── visited_at   (timestamp)
-└── PRIMARY KEY (user_id, workspace_id, page_id)
+└── UNIQUE (user_id, page_id)
 
 Workspace                  ← invite link fields are columns here, not a separate table
 ├── id                  (uuid, primary key)
@@ -503,7 +507,8 @@ WorkspaceStorageUsage
 | POST | `/api/workspaces/:id/members/invite` | Invite one or more members by email | Admin |
 | PATCH | `/api/workspaces/:id/members/:userId` | Change member role | Admin |
 | DELETE | `/api/workspaces/:id/members/:userId` | Remove member from workspace | Admin |
-| POST | `/api/workspaces/:id/transfer` | Transfer Admin ownership (sends email confirmation) | Admin |
+| POST | `/api/workspaces/:id/transfer` | Initiate ownership transfer (sends email confirmation link to current Admin) | Admin |
+| GET | `/api/workspaces/:id/transfer/confirm` | Validate confirmation token and complete transfer atomically | Admin (via link) |
 | POST | `/api/workspaces/:id/invitations/:inviteId/resend` | Resend invite email | Admin |
 | DELETE | `/api/workspaces/:id/invitations/:inviteId` | Cancel pending invitation | Admin |
 
@@ -539,7 +544,7 @@ WorkspaceStorageUsage
 | `send-workspace-invite` | Admin sends email invite | Sends invite email with 7-day expiry token via Nodemailer; retries up to 3× with exponential backoff |
 | `delete-workspace` | Admin confirms workspace deletion | Hard-deletes all workspace data (pages, blocks, files, members) asynchronously; cancels all pending workspace-scoped jobs |
 | `notify-storage-threshold` | Daily cron | Sends an email to all workspace Admins when storage crosses 90 % for the first time in a billing cycle |
-| `expire-invitations` | Daily cron | Marks `workspace_members` invitation rows (`status = invited`) as expired when `invite_expires` has passed — informational cleanup; tokens already return 410 after expiry based on the timestamp check |
+| `expire-invitations` | Daily cron | Sets `workspace_members.status = 'expired'` for rows where `status = 'invited'` and `invite_expires < NOW()` — audit cleanup only; tokens already return 410 based on the timestamp check. Rows are retained (not deleted) for audit history. |
 
 ---
 
@@ -550,18 +555,17 @@ WorkspaceStorageUsage
 3. **Email is the user's immutable identity.** It is the magic-link sign-in credential and cannot be changed via the Settings UI. Display name, avatar, and job title can be changed freely.
 4. **Slug changes invalidate share links.** A 308 redirect from the old slug is served for 30 days to ease the transition.
 5. **Invite links grant Editor role in Phase 1.** The role is stored in `workspaces.invite_link_role` (default `editor`) but the UI does not expose configuration — configurable roles are Phase 2.
-6. **Invite emails expire in 7 days.** After expiry the invite token returns 410 Gone. The Admin must resend. The `workspace_members` row (with `status = invited`) is retained for audit history.
+6. **Invite emails expire in 7 days.** After expiry the invite token returns 410 Gone. The Admin must resend. The `workspace_members` row has its `status` set to `expired` (by the `expire-invitations` daily job) and is retained for audit history — it is never deleted.
 7. **Regenerating or disabling the invite link immediately invalidates the old token.** Anyone who clicks an old link sees a 410.
 8. **Storage quota is 5 GB per workspace.** Four upload kinds count toward it: `block_media`, `page_cover`, `page_icon`, `workspace_icon`. **`user_avatar` uploads are user-scoped (`workspace_id = null`) and are exempt from the workspace quota.** Uploads are blocked at 100 %. The quota check is enforced server-side before a pre-signed URL is issued (see [file-storage.md](file-storage.md)).
 9. **Account deletion requires ownership transfer** if the user is the sole Admin of any workspace. The UI blocks deletion and lists the affected workspaces with deep-links.
 10. **Session revocation takes effect immediately.** The next API request from a revoked session returns 401.
-11. **Magic-link rate limits:** 3 sign-in requests per 15 minutes per email address; 10 per hour per IP address. Exceeding the limit returns HTTP 429.
-12. **Impersonated sessions expire after 2 hours** regardless of activity. They appear with a warning badge in the session list and cannot be revoked by the account owner.
-13. **Notification preference changes take effect from the next delivery cycle** — not retroactively.
-14. **Default page access affects new pages only.** Existing pages are not retroactively changed when the setting is toggled.
-15. **All members can view the member directory.** Non-Admins see name, email, role, and joined date. Only Admins see pending invitations and action menus (change role, remove, transfer ownership).
-16. **Pending invitation emails are shown only to Admins.** Non-Admin members cannot see who has been invited but not yet joined.
-17. **The per-user state APIs** (`/api/user/preferences`, `/api/user/hints`, `/api/user/favorites`, `/api/user/recently-visited`) are managed implicitly by the app (navigation, onboarding), not via the Settings UI. They are authenticated endpoints with the same session guard as all other `/api/user/*` routes.
+11. **Impersonated sessions expire after 2 hours** regardless of activity. They appear with a warning badge in the session list and cannot be revoked by the account owner.
+12. **Notification preference changes take effect from the next delivery cycle** — not retroactively.
+13. **Default page access affects new pages only.** Existing pages are not retroactively changed when the setting is toggled.
+14. **All members can view the member directory.** Non-Admins see name, email, role, and joined date. Only Admins see pending invitations and action menus (change role, remove, transfer ownership).
+15. **Pending invitation emails are shown only to Admins.** Non-Admin members cannot see who has been invited but not yet joined.
+16. **The per-user state APIs** (`/api/user/preferences`, `/api/user/hints`, `/api/user/favorites`, `/api/user/recently-visited`) are managed implicitly by the app (navigation, onboarding), not via the Settings UI. They are authenticated endpoints with the same session guard as all other `/api/user/*` routes.
 
 ---
 

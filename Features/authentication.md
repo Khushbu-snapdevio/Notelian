@@ -125,33 +125,45 @@ Used by the Notelian platform team via **Orbit Admin** — not exposed to custom
 
 ```
 User
-├── id                  (uuid, primary key)
-├── name                (string)
-├── email               (string, unique)
-├── email_verified      (boolean, default: false)
-├── image               (string — avatar URL, nullable)
-├── is_platform_admin   (boolean, default: false)
-├── banned              (boolean, default: false)
-├── banned_reason       (string, nullable)
-├── created_at          (timestamp)
-└── updated_at          (timestamp)
+├── id                   (uuid, primary key)
+├── name                 (string — display name)
+├── email                (string, unique)
+├── email_verified       (boolean, default: false)
+├── image                (string — avatar CDN URL, nullable)
+├── job_title            (string — free-text role/title, nullable)
+├── timezone             (string — IANA tz for digest delivery, nullable)
+├── is_platform_admin    (boolean, default: false)
+├── banned               (boolean, default: false)
+├── banned_reason        (string, nullable)
+├── ban_expires          (timestamp, nullable)
+├── onboarding_completed (boolean, default: false)
+├── onboarding_step      (integer — 0 = not started, 1–4 = wizard screen, default: 0)
+├── tour_completed       (boolean, default: false)
+├── last_active_at       (timestamp, nullable)
+├── created_at           (timestamp)
+└── updated_at           (timestamp)
 
 Session
 ├── id                  (uuid, primary key)
 ├── user_id             (foreign key → User)
 ├── token               (string, unique — hashed)
-├── expires_at          (timestamp)
+├── expires_at          (timestamp — 7-day sliding TTL)
 ├── ip_address          (string, nullable)
 ├── user_agent          (string, nullable)
-├── impersonated_by     (uuid, nullable)
-└── created_at          (timestamp)
+├── impersonated_by     (uuid, nullable — set for Orbit impersonation; 2-hour TTL)
+├── created_at          (timestamp)
+└── updated_at          (timestamp)
 
 Verification
 ├── id                  (uuid, primary key)
 ├── identifier          (string — email)
 ├── value               (string — hashed magic-link token)
-└── expires_at          (timestamp)
+├── expires_at          (timestamp — 15-minute TTL)
+├── created_at          (timestamp)
+└── updated_at          (timestamp)
 ```
+
+> **Authoritative schema:** the Drizzle model in [DATABASE-PLAN.md § Auth](../DATABASE-PLAN.md) is the single source of truth. This data model sketch must stay in sync with it.
 
 ---
 
@@ -184,15 +196,12 @@ Better Auth exposes a unified handler at `/api/auth/[...all]`.
 
 ## Security Considerations
 
-| Concern | Mitigation |
-|---------|-----------|
-| Email enumeration | Magic-link requests always return the same message regardless of whether the email exists |
-
-| Session hijacking | Database-backed sessions; token hashed in DB |
-| Token reuse | Magic-link tokens are single-use and expire after 15 minutes |
-| Banned users | Sessions revoked immediately on ban |
-| Impersonation | Logged to audit trail; session marked with `impersonated_by` |
-| Account deletion | Requires email confirmation; ownership transfer enforced |
+- **Email enumeration** — Magic-link requests always return the same response regardless of whether the email exists.
+- **Session hijacking** — Database-backed sessions; token is hashed in the DB.
+- **Token reuse** — Magic-link tokens are single-use and expire after 15 minutes.
+- **Banned users** — Sessions revoked immediately on ban.
+- **Impersonation** — Logged to audit trail; session marked with `impersonated_by`.
+- **Account deletion** — Requires email confirmation; ownership transfer enforced.
 
 ---
 

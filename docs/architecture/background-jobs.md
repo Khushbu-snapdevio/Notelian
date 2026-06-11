@@ -12,13 +12,6 @@ here are the canonical ones, drawn from the feature specs under
 reschedule a job, define it in its **feature spec first**, then update this
 catalog and GETTING-STARTED so all three stay in sync (CLAUDE.md Rule 1).
 
-> **Modeled on Krova.** Krova (a VM-hosting platform) runs dozens of pg-boss jobs
-> for cube provisioning, snapshots, billing, and server lifecycle. Notelian is a
-> document workspace, so almost none of those infra jobs apply. What we *did*
-> adopt is Krova's **discipline**: a single catalog, `policy: "exclusive"` on
-> every cron job, at-least-once delivery with idempotent handlers, and a
-> retry/expiry budget declared per queue. The list below is Notelian's own.
-
 ---
 
 ## Why a job queue at all
@@ -93,16 +86,28 @@ the feature spec that owns the job's behavior.
 | `send-workspace-invite` | On demand — Admin invites member by email | Send the workspace invite email with a 7-day expiry token via Nodemailer; retries up to 3× with exponential backoff |
 | `delete-workspace` | On demand — Admin confirms workspace deletion | Hard-delete all workspace data (pages, blocks, files, members, storage objects) asynchronously; cancels all pending workspace-scoped jobs before purging |
 | `notify-storage-threshold` | Daily | Send an email to all workspace Admins the first time storage crosses 90 % — does not re-fire until the workspace drops below 90 % and crosses it again |
-| `expire-invitations` | Daily | Mark `workspace_members` invitation rows (`status = invited`) as cleanly expired when `invite_expires` has passed; tokens already return 410 based on the timestamp — this is audit cleanup only |
+| `expire-invitations` | Daily | Set `workspace_members.status = 'expired'` for rows where `status = 'invited'` and `invite_expires < NOW()`; tokens already return 410 based on the timestamp check — the status update is audit cleanup only. Row is retained; not deleted. |
 
 ### Notifications — [notifications.md](../../Features/notifications.md)
 
 | Job | Trigger | Purpose |
 | --- | --- | --- |
 | `send-notification-email` | On event (realtime frequency) | Deliver a per-event notification email (mention, comment reply, access granted) via Nodemailer/SMTP; retries up to 3× with exponential backoff (1 min → 5 min → 25 min) |
-| `send-email-digest` | Daily 08:00 (user TZ) / weekly | Send the daily or weekly digest of unread notifications; skips users with nothing unread |
+| `send-email-digest` | Hourly (see TZ note below) | Send the daily or weekly digest of unread notifications; skips users with nothing unread |
 | `cleanup-old-notifications` | Nightly | Permanently delete notification rows older than 90 days |
 | `cleanup-email-outbox` | Nightly | Sweep `email_outbox` rows stuck in `sending` > 10 min → `failed`; purge `sent` rows older than 30 days |
+
+---
+
+## Digest timezone scheduling
+
+pg-boss cron expressions run in **UTC**. A user's digest target is `08:00` in their **local timezone** (`users.timezone`, IANA format). Because you cannot express a per-user UTC offset as a single cron, `send-email-digest` is scheduled to run **every hour** on the :00 mark. Each run:
+
+1. Queries for users whose local time is currently between 08:00 and 08:59 (i.e. `NOW() AT TIME ZONE users.timezone` between `08:00` and `09:00`).
+2. Filters to those with `email_frequency = 'daily'` (or `'weekly'` on the configured `weekly_digest_day`).
+3. Enqueues one `send-email-digest` payload per qualifying user.
+
+**Idempotency:** each payload includes a `digest_date` (the UTC calendar date for which the digest is being sent). The handler checks `email_outbox` for an existing `digest_email` row for that `(recipient_email, digest_date)` before inserting — a second run in the same UTC hour finds the row and skips sending. This prevents double-sends if the worker restarts mid-hour.
 
 ---
 
@@ -118,11 +123,11 @@ the feature spec that owns the job's behavior.
 | `auto-delete-expired-trash` | Daily 02:00 UTC |
 | `warn-expiring-trash` | Daily 02:00 UTC |
 | `auto-delete-expired-versions` | Daily |
-| `send-email-digest` | Daily 08:00 (user TZ) / weekly |
+| `send-email-digest` | Hourly (filters by user TZ — see Digest timezone scheduling) |
 | `cleanup-old-notifications` | Nightly |
 | `cleanup-email-outbox` | Nightly |
 
-On-demand (not scheduled): `delete-user-private-pages`, `send-notification-email`.
+On-demand (not scheduled): `delete-user-private-pages`, `send-notification-email`, `send-workspace-invite`, `delete-workspace`.
 Nightly (cleanup): `cleanup-old-notifications`, `cleanup-email-outbox`.
 All scheduled jobs use `policy: "exclusive"`.
 
@@ -210,4 +215,4 @@ To keep the boundary clear:
 
 ---
 
-*Last updated: 2026-06-09*
+*Last updated: 2026-06-11*
