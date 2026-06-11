@@ -28,6 +28,7 @@ Workspace is the top-level container in Notelian. Every user belongs to at least
 - Optional: Workspace Icon (emoji or image upload)
 - Creator is automatically assigned the **Admin** role
 - On creation: user is taken to the empty workspace ready to create the first page
+- **A `workspace_storage_usage` row (`bytes_used = 0`) is inserted in the same transaction as the workspace row** — this is mandatory; the first file upload quota check will fail without it.
 
 ---
 
@@ -137,6 +138,7 @@ Accessible by Admin only.
 |-------|-------------|
 | Active | Member has accepted invite and has access |
 | Invited | Invite sent, not yet accepted |
+| Expired | Invite was not accepted before the 7-day window — row is retained for audit, token returns 410 |
 | Removed | Member was removed, no longer has access — the membership row is deleted (not a stored `status` value) |
 
 ---
@@ -192,7 +194,8 @@ WorkspaceMember
 | DELETE | `/api/workspaces/:id/members/:userId` | Remove member | Admin |
 | POST | `/api/workspaces/:id/invite-link` | Generate invite link | Admin |
 | DELETE | `/api/workspaces/:id/invite-link` | Disable invite link | Admin |
-| POST | `/api/workspaces/:id/transfer` | Transfer Admin role | Admin |
+| POST | `/api/workspaces/:id/transfer` | Initiate ownership transfer (sends email confirmation link to current Admin) | Admin |
+| GET | `/api/workspaces/:id/transfer/confirm` | Validate confirmation token and complete the transfer atomically | Admin (via link) |
 
 ---
 

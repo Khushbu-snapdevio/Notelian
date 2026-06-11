@@ -257,6 +257,8 @@ GuestInvitation
 | DELETE | `/api/pages/:id/public-link` | Disable public link | Full Access |
 | POST | `/api/pages/:id/guests/invite` | Invite a guest by email | Full Access |
 | DELETE | `/api/pages/:id/guests/:guestId` | Revoke guest access | Full Access |
+| GET | `/invite/guest/:token` | Validate token, show page preview + accept screen | Public |
+| POST | `/invite/guest/:token/accept` | Accept guest invitation, create `page_permissions` row | Authenticated |
 
 ---
 

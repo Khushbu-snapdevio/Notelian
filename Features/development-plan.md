@@ -20,6 +20,8 @@ This document covers Notelian's technical architecture, development phases, and 
 | File Storage | S3-compatible object storage | Page covers, media blocks, file attachments |
 | Email | Nodemailer (SMTP) | Transactional email delivery via SMTP |
 | Admin | Orbit Admin | Custom internal ops dashboard (`/orbit`) |
+| UI Primitives | Radix UI | Accessible, unstyled components (Dialog, Popover, Tooltip, etc.) |
+| Forms | react-hook-form + `@hookform/resolvers/zod` | Form state + shared client/server Zod validation |
 | Styling | Tailwind CSS | Utility-first CSS framework |
 | Math Rendering | KaTeX | LaTeX equation rendering in editor blocks |
 | Testing | Vitest + Playwright | Unit + integration + E2E |
@@ -284,17 +286,17 @@ cp .env.example .env.local
 # Fill in DATABASE_URL and other required variables
 
 # Generate + apply database migrations
-pnpm run db:generate     # build migration SQL from the Drizzle schema
-pnpm run db:migrate      # apply migrations to the database
+pnpm db:generate     # build migration SQL from the Drizzle schema
+pnpm db:migrate      # apply migrations to the database
 
 # Start development server
-pnpm run dev
+pnpm dev
 
 # Start the background-job worker (separate terminal)
-pnpm run worker          # pg-boss — notifications, email digests, cleanup jobs
+pnpm worker          # pg-boss — notifications, email digests, cleanup jobs
 ```
 
-> `pnpm run dev` alone does **not** process background jobs (email digests, trash auto-delete, version pruning, stale-upload cleanup). Run `pnpm run worker` in a second terminal or those features silently do nothing. See [GETTING-STARTED.md](../GETTING-STARTED.md) §8.
+> `pnpm dev` alone does **not** process background jobs (email digests, trash auto-delete, version pruning, stale-upload cleanup). Run `pnpm worker` in a second terminal or those features silently do nothing. See [GETTING-STARTED.md](../GETTING-STARTED.md) §8.
 
 **Prerequisites:** Node.js v20+, PostgreSQL v16+
 
@@ -326,4 +328,4 @@ pnpm run worker          # pg-boss — notifications, email digests, cleanup job
 
 ---
 
-*Last updated: 2026-06-09*
+*Last updated: 2026-06-11*

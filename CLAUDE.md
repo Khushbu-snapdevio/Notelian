@@ -26,7 +26,7 @@ Everyday commands below (the project is pre-development — these are the expect
 
 ## Tech Stack
 
-Next.js (App Router, React, TypeScript strict) · Tailwind CSS · TipTap (ProseMirror) editor · KaTeX · PostgreSQL + Drizzle ORM · Better Auth (magic-link + admin plugins) · pg-boss (background jobs) · Nodemailer (SMTP) · S3-compatible object storage + CDN · SSE for real-time notifications · Vitest + Playwright · pnpm. Full rationale in [Features/development-plan.md](Features/development-plan.md).
+Next.js (App Router, React, TypeScript strict) · Tailwind CSS · Radix UI (accessible primitives) · TipTap (ProseMirror) editor · KaTeX · react-hook-form + Zod (forms & validation) · PostgreSQL + Drizzle ORM · Better Auth (magic-link + admin plugins) · pg-boss (background jobs) · Nodemailer (SMTP) · S3-compatible object storage + CDN · SSE for real-time notifications · Vitest + Playwright · pnpm. Full rationale in [Features/development-plan.md](Features/development-plan.md).
 
 ## Architecture
 
@@ -37,7 +37,7 @@ Detailed per-subsystem docs live under [docs/architecture/](docs/architecture/) 
 - **Processes, worker scaling, route groups, service layer, the four registries** → [docs/architecture/backend-overview.md](docs/architecture/backend-overview.md)
 - **Background jobs & queues** — every pg-boss job, schedule, retry policy, idempotency → [docs/architecture/background-jobs.md](docs/architecture/background-jobs.md)
 - **Database schema** — every table, the closure table, single-table page inheritance, JSONB blocks, FTS triggers, the split `lib/db/schema/` layout → [DATABASE-PLAN.md](DATABASE-PLAN.md)
-- **Security model** — permission resolution / BOLA, magic-link safety, file-upload safety, public-link & guest access, rate limiting → [docs/security.md](docs/security.md)
+- **Security model** — permission resolution / BOLA, magic-link safety, file-upload safety, public-link & guest access → [docs/security.md](docs/security.md)
 - **UI design system** — design tokens (colors, type, spacing), every component spec, feature UI patterns (editor, databases, settings modal, search, notifications), accessibility, responsive rules → [docs/ui-design.md](docs/ui-design.md)
 - **API endpoints** — each `Features/*.md` spec lists the endpoints for its feature
 - **Settings** — Account (profile, sessions, notifications) and Workspace (general, members, invite link) settings UI, endpoints, data model, and business rules → [Features/settings.md](Features/settings.md)

@@ -138,6 +138,8 @@ Users who dismissed the tour can return to onboarding resources via:
 
 ## Analytics Events
 
+These events are sent to the **product analytics service** configured in `lib/analytics/` (e.g. PostHog or Plausible — choose and configure before building). They are **not** stored in the Notelian PostgreSQL database; there is no `analytics_events` table. The `lib/analytics/` module wraps the chosen provider so all call sites are provider-agnostic — swapping providers requires changing only that module.
+
 | Event | Trigger |
 |-------|---------|
 | `onboarding_started` | User lands on wizard screen 1 |

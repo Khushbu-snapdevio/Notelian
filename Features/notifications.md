@@ -233,7 +233,7 @@ email_outbox
 | Job | Schedule | `retryLimit` | Description |
 |-----|----------|-------------|-------------|
 | `send-notification-email` | On event | 3 (60s / 300s / 1500s backoff) | Enqueue into `email_outbox`, then send via SMTP; outbox row tracks state |
-| `send-email-digest` | Daily 08:00 (user TZ) / weekly | 2 | Collect unread notifications, build digest, enqueue into `email_outbox` |
+| `send-email-digest` | Hourly (filters by user TZ — see [background-jobs.md § Digest timezone scheduling](../docs/architecture/background-jobs.md)) | 2 | Collect unread notifications, build digest, enqueue into `email_outbox`; idempotency key is `(recipient_email, digest_date)` |
 | `cleanup-old-notifications` | Nightly | 2 | Permanently delete notifications older than 90 days |
 | `cleanup-email-outbox` | Nightly | 1 | Sweep `sending` rows stuck > 10 min → `failed`; delete `sent` rows older than 30 days |
 

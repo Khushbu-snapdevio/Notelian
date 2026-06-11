@@ -1,6 +1,6 @@
 # Security Model
 
-Notelian's security model, consolidated from the feature specs. Read this before working on anything touching auth, permissions, sharing, or file uploads. As the surface grows this file can split into a `docs/security/` folder (per-topic), as krova does.
+Notelian's security model, consolidated from the feature specs. Read this before working on anything touching auth, permissions, sharing, or file uploads. As the surface grows this file can split into a `docs/security/` folder (per-topic).
 
 The single most important principle: **access control is enforced in the database query, never in application code after a broad fetch.** That is [Phase-1 decision #5](../README.md#phase-1-architecture-decisions) and Rule 3 in [CLAUDE.md](../CLAUDE.md#rules).
 
@@ -8,7 +8,6 @@ The single most important principle: **access control is enforced in the databas
 
 - **Passwordless, magic-link only** (Better Auth). No passwords, no OAuth/social in the MVP — fewer credential-handling surfaces to secure.
 - **Magic-link tokens are short-lived (15-minute TTL) and single-use.** A token is deleted the moment it's consumed; expired/unused token expiry is handled by Better Auth's own lifecycle. A delivered link that's already been used must fail closed.
-- **Magic-link requests are rate-limited:** 3 requests per 15 minutes per email address and 10 per hour per IP address. All responses — including rate-limited and non-existent-email cases — return the same generic message to prevent email enumeration.
 - **Sessions are database-backed, have a 7-day sliding TTL, and are revocable.** Each use of a valid session token renews its expiry. Users can list active devices and revoke any session; TTL-based cleanup is handled by Better Auth, not a custom job.
 - **The Better Auth ↔ schema column mapping is locked once** in `lib/auth/` (see the mapping note in [DATABASE-PLAN.md](../DATABASE-PLAN.md)). Never rename auth columns after sessions/accounts exist.
 
@@ -44,11 +43,28 @@ Two layers: **workspace role** (Admin / Editor / Viewer) and **page-level permis
 - **Orbit is not reachable by end users** — gate every `/orbit` route and API on `users.is_platform_admin`.
 - **Every Orbit mutation writes an append-only `platform_audit_log` row** (actor, action, target, metadata). Admins cannot escalate or modify their own admin status through the user-edit path.
 
+## Token storage policy
+
+Every token in Notelian belongs to one of three storage patterns:
+
+| Token | Column | Stored as | Rationale |
+|-------|--------|-----------|-----------|
+| Magic-link token | `verifications.value` | **Hashed** (Better Auth handles this) | Short-lived credential; hashing means a DB leak can't be immediately used for sign-in |
+| Session token | `sessions.token` | **Hashed** (Better Auth handles this) | Long-lived session; hash prevents a DB dump from yielding active sessions |
+| Workspace invite token | `workspace_members.invite_token` | **Plaintext** | Single-use, 7-day TTL, high entropy (UUID). Lookup is by raw token from the link — hashing would require a full table scan or a separate lookup table. Entropy alone is sufficient. |
+| Workspace invite link token | `workspaces.invite_link_token` | **Plaintext** | Not a credential — it's the public invite link. Anyone with it can join; revocation is by regeneration. |
+| Public link token | `public_links.token` | **Plaintext** | 21-char `nanoid` (≈ 126 bits). Not a session credential; used as a URL path segment. Entropy makes brute-force infeasible. |
+| Guest invitation token | `guest_invitations.token` | **Plaintext** | Single-use, 7-day TTL. Same reasoning as workspace invite token. |
+| Ownership transfer confirmation token | `workspace_members` (transient, passed in email link) | **Plaintext, short-lived** | Sent in email, consumed on click, expiry enforced server-side. Not persisted beyond the transfer flow. |
+
+**General rule:** tokens used as session credentials are hashed (Better Auth manages this). Invite and capability tokens with sufficient entropy (≥ 128 bits) are stored plaintext — the bit-space makes offline attacks infeasible, and hashing them complicates point-lookup without meaningfully improving security.
+
+---
+
 ## Forward-looking (post-MVP, document now so it's not forgotten)
 
 - **Outbound webhooks (Phase 3)** — sign payloads (HMAC), guard against **SSRF** by re-resolving the destination URL on every delivery and blocking private/loopback/link-local ranges, and auto-disable flapping endpoints.
-- **Public API + API keys (Phase 3)** — scoped keys, per-key rate limits, the same SQL-level permission enforcement as the web app.
-- **Rate limiting (extended)** — public-link access and (Phase 3) API key endpoints should be rate-limited per-IP; magic-link rate limiting is already enforced in Phase 1 (see Authentication above).
+- **Public API + API keys (Phase 3)** — scoped keys, the same SQL-level permission enforcement as the web app.
 
 ---
 

@@ -732,8 +732,6 @@ Card: `bg-white rounded-xl shadow-md p-8 w-full max-w-sm mx-auto mt-16`.
 [Didn't receive it? Resend — Ghost sm] ← disabled for 60s with countdown
 ```
 
-**Rate-limit error:** shown inline below the input — `text-xs text-red-600`.
-
 ---
 
 ### Onboarding Wizard (`/onboarding`)
