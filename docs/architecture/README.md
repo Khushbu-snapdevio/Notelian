@@ -24,4 +24,4 @@ plan in [../../Features/development-plan.md](../../Features/development-plan.md)
 
 ---
 
-*Last updated: 2026-06-09*
+*Last updated: 2026-06-12*

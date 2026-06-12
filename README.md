@@ -4,6 +4,8 @@ Structured workspace for small teams — Notion's core, pre-assembled.
 
 An opinionated, pre-structured workspace for **small teams (3–15 people) who tried Notion, found it overwhelming to set up, and just want to get working.** Instead of a blank canvas with infinite options, Notelian ships with the structure those teams actually need — a fast block editor, a shared wiki, databases that feel like documents, and good search — ready to use on day one.
 
+**Status: pre-development — this repository is a design and architecture specification. No application code exists yet.**
+
 [Features](#features) · [Architecture](#architecture) · [Tech Stack](#tech-stack) · [Database Schema](#database-schema) · [Getting Started](#getting-started)
 
 ---
@@ -27,11 +29,13 @@ Notelian is a team workspace built around one bet: **fewer decisions, faster tim
 
 ```text
 Workspace
-  └── Page
-        ├── Blocks (text, media, tasks, code, etc.)
-        └── Subpages
-              └── Database
-                    └── Entry (is itself a full Page)
+  └── Page  ◄─────────────────────────────────────┐
+        ├── Blocks (text, media, tasks, code, etc.) │
+        │         └── Inline Database (embedded)    │
+        └── Subpages                                │
+              └── Database (full-page)              │
+                    └── Entry (is itself a Page) ───┘
+                          (has blocks, subpages, nested databases — recurses)
 ```
 
 ---
@@ -53,7 +57,7 @@ Passwordless identity and session management. **Powered by Better Auth** with th
 
 - Passwordless sign in / sign up via magic link (the only auth method — no passwords, no OAuth/social)
 - Database-backed session management; multi-device session list and revocation
-- Ban / unban and impersonate users (Admin plugin)
+- Ban / unban users (surfaced in Orbit Admin — see [Admin Panel](#admin-panel-orbit))
 
 See [Features/authentication.md](Features/authentication.md).
 
@@ -78,7 +82,7 @@ Guided setup for new users: a **Setup Wizard** (Profile → Create/Join Workspac
 
 ### Navigation
 
-Sidebar and workspace navigation: workspace switcher, collapsible + resizable sidebar, hierarchical page tree with drag-and-drop reordering, Favorites (per-user), Recently Visited (last 10), Trash (30-day retention), and a sidebar filter. See [Features/navigation.md](Features/navigation.md).
+Sidebar and workspace navigation: workspace switcher, collapsible + resizable sidebar, hierarchical page tree with drag-and-drop reordering, Favorites (per-user), Recently Visited (last 10), Trash (30-day retention), and a sidebar filter (filter the page tree by name). See [Features/navigation.md](Features/navigation.md).
 
 ### Pages
 
@@ -102,8 +106,9 @@ Block-based rich text editor — every element is a block. **Powered by TipTap (
 | Structure | Table of Contents, Simple Table, Columns (2–3 column layout) |
 | Code & Math | Code Block (syntax highlighting), Equation (LaTeX via KaTeX) |
 | Reference | Linked Page, Inline Database |
+| Template | Template Button (clones a predefined block structure on click) |
 
-`/` slash command to insert any block, floating inline-format toolbar, markdown shortcuts, block drag-and-drop, multi-block selection, continuous auto-save with offline queue, and 200-step undo. See [Features/editor.md](Features/editor.md).
+`/` slash command to insert any block, floating inline-format toolbar, markdown shortcuts, block drag-and-drop, multi-block selection, continuous auto-save with a local queue that buffers writes during brief connectivity loss, and 200-step undo. See [Features/editor.md](Features/editor.md).
 
 ### Templates
 
@@ -124,7 +129,7 @@ Full-page or inline; multiple named views per database; filters with AND/OR logi
 
 ### Database Properties
 
-Typed columns that define database structure: Text, Number, Select, Multi-Select, Date, Checkbox, URL, Email, Phone, Person (`@me` default), and Relation (bidirectional, auto back-relation). System properties (Created/Last Edited Time + By) are auto-generated. Limit: 50 user-created properties per database. See [Features/database-properties.md](Features/database-properties.md).
+Typed columns that define database structure: Text, Number, Select, Multi-Select, Date, Checkbox, URL, Email, Phone, Person (`@me` default), and Relation (bidirectional, auto back-relation). System properties — Created Time, Created By, Last Edited Time, Last Edited By — are auto-generated. Limit: 50 user-created properties per database. See [Features/database-properties.md](Features/database-properties.md).
 
 ### Search
 
@@ -205,7 +210,7 @@ Notelian runs as **two processes sharing a single PostgreSQL database**:
 │  • API routes       │     │  • Digest schedules │
 │  • Server actions   │     │  • Trash purge      │
 │  • Auth + SSE       │     │  • Page exports     │
-│  • Enqueues jobs    │     │  • Search reindex   │
+│  • Enqueues jobs    │     │  • File cleanup     │
 └────────┬────────────┘     └────────┬────────────┘
          │                           │
          └───────────┬───────────────┘
@@ -266,7 +271,7 @@ The product is assembled from named building blocks rather than ad-hoc code: a `
 
 | Technology | Purpose |
 | --- | --- |
-| **Next.js (App Router)** | UI, routing, React server components, server actions |
+| **Next.js (App Router) v15+** | UI, routing, React server components, server actions |
 | **TipTap (ProseMirror)** | Block-based rich text editor |
 | **Tailwind CSS** | Utility-first styling |
 | **Radix UI** | Accessible, unstyled UI primitives (Dialog, Popover, Tooltip, etc.) |
@@ -426,6 +431,7 @@ pnpm db:migrate
 pnpm dev
 
 # In a second terminal, start the background-job worker
+# Required — without it, email delivery, notifications, exports, trash purge, and digests are non-functional
 pnpm worker
 ```
 

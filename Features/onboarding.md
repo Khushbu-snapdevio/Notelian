@@ -180,6 +180,7 @@ UserHintState
 | PATCH | `/api/user/onboarding` | Update onboarding step / completion state | Authenticated |
 | GET | `/api/user/hints` | Get dismissed hint keys | Authenticated |
 | POST | `/api/user/hints/:key/dismiss` | Mark a hint as dismissed | Authenticated |
+| GET | `/api/templates?kind=built-in` | List built-in templates for Screen 4 template picker | Authenticated |
 
 ---
 

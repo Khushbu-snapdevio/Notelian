@@ -223,6 +223,16 @@ A special interactive block that creates a copy of a predefined block structure 
 | Template content | Any block types — text, to-dos, tables, etc. |
 | Insert location | Below button / Bottom of page |
 
+**JSONB content shape** (stored in the block's `content` field in the `blocks` table):
+```jsonc
+{
+  "label": "string — button text shown to the user",
+  "template_blocks": [ /* array of block descriptors — same shape as page_snapshot.blocks;
+                          IDs here are template-internal only, new UUIDs generated on each click */ ],
+  "insert_location": "below_button | bottom_of_page"
+}
+```
+
 ---
 
 ## Template Placeholders
@@ -279,7 +289,7 @@ Template
 }
 ```
 
-> When a template is applied (`POST /api/templates/:id/use`), the server walks `page_snapshot.blocks` recursively, inserts them as `Block` rows under the new page (with new UUIDs), and creates placeholder subpages for each entry in `subpages`. Database schemas are recreated via `database_properties` and `database_views` rows — no entry data is copied. All IDs in the snapshot are internal references only; new UUIDs are generated for every inserted row.
+> When a template is applied (`POST /api/templates/:id/use`), the server walks `page_snapshot.blocks` recursively, inserts them as `Block` rows under the new page (with new UUIDs), and creates placeholder subpages for each entry in `subpages`. Database schemas are recreated via `database_properties` and `database_views` rows — no entry data is copied. **All block IDs in `page_snapshot` are template-internal reference IDs used only during template definition — they are never persisted to the created page.** When the handler walks the snapshot, it generates brand-new UUIDs for every inserted `blocks` row.
 
 ---
 

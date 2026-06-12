@@ -119,7 +119,8 @@ Hierarchical display of all pages in the workspace.
 ### 7. Recently Visited Pages
 
 - Shown below the search button when the sidebar is open and no filter is active
-- Last 10 pages visited in reverse-chronological order
+- Last 10 **unique** pages visited in the current workspace, in reverse-chronological order (per-workspace, not cross-workspace)
+- Revisiting a page already in the list updates its `visited_at` timestamp (upsert) rather than creating a duplicate entry
 - Clicking a recent page navigates directly to it
 - The list updates automatically as the user navigates
 

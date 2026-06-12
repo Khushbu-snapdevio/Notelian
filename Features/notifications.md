@@ -35,6 +35,8 @@ Notifications keep users informed about activity that involves them — @mention
 
 > The table has **ten trigger rows** but only **nine `notification_type` enum values** — because both "@mention in a comment" and "@mention in page content" produce `type = 'mention'`. They differ only in where the mention occurs (comment vs block), but the notification row stores the same type. The `source_id` field (pointing to the comment or block) distinguishes them in the UI.
 
+> **`comment` notifications fire only for the page creator**, not for all members who have access to the page. Members who want to follow a page's comments must be mentioned or reply to a thread. Per-page notification subscriptions are deferred to Phase 2.
+
 ---
 
 ## In-App Notification Center

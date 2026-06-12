@@ -147,7 +147,7 @@ Add filters to show only the entries that match your criteria. Filters are saved
 | Date | Is, Is before, Is after, Is between, Is empty, Is not empty |
 | Checkbox | Is checked, Is not checked |
 | Person | Is, Is not, Is any of, Includes me, Is empty, Is not empty |
-| Relation | Contains, Does not contain, Is empty |
+| Relation | Contains, Does not contain, Is empty, Is not empty |
 
 **Multiple filters:** Combined with AND (all must match) or OR (any must match). Switch between AND/OR using the logic toggle.
 
@@ -260,7 +260,7 @@ DatabaseEntry (extends Page — each entry is a page)
 ## Business Rules
 
 1. A database is a special type of page — it appears in the sidebar and supports all page features (icon, cover, export, permissions).
-2. Every database must have at least one view. The last remaining view cannot be deleted.
+2. Every database must have at least one view. The last remaining view cannot be deleted. Every database has a `default_view_id` — if the default view is deleted, the oldest remaining view becomes the new default automatically (reassigned in the same transaction as the delete).
 3. Switching views never modifies the underlying data — views are lenses on the same data set.
 4. Board view requires a Select-type property to group by. If no Select property exists, the user is prompted to create one.
 5. Calendar view requires a Date-type property. If none exists, the user is prompted to create one.

@@ -310,8 +310,8 @@ Columns:         { "columnCount": 2 }  // child blocks with parent_block_id form
 
 Template Button: {
                    "label": "+ Add Today's Log",
-                   "insertLocation": "below_button",  // "below_button" | "bottom_of_page"
-                   "templateBlocks": [
+                   "insert_location": "below_button",  // "below_button" | "bottom_of_page"
+                   "template_blocks": [
                      // Serialized block structures stored inline — NOT as separate Block rows.
                      // Full TemplateBlock schema (recursive):
                      // {

@@ -11,6 +11,13 @@ The single most important principle: **access control is enforced in the databas
 - **Sessions are database-backed, have a 7-day sliding TTL, and are revocable.** Each use of a valid session token renews its expiry. Users can list active devices and revoke any session; TTL-based cleanup is handled by Better Auth, not a custom job.
 - **The Better Auth ↔ schema column mapping is locked once** in `lib/auth/` (see the mapping note in [DATABASE-PLAN.md](../DATABASE-PLAN.md)). Never rename auth columns after sessions/accounts exist.
 
+## Impersonation Sessions
+
+- **Platform-admin only** (Orbit Admin — `is_platform_admin = true`). Never exposed to workspace Admins.
+- Impersonation sessions are created with `impersonated_by = <admin user_id>` and `impersonated_at = NOW()` and have a **hard 2-hour TTL** — no sliding-window refresh.
+- A `beforeRefresh` hook in `lib/auth/` rejects any refresh attempt where `NOW() - session.impersonated_at > 2 hours`. Without this hook, Better Auth's default sliding-window refresh would silently extend the session indefinitely.
+- Every impersonation is logged to `platform_audit_log` with actor, target user, and timestamp — before the session is created, not after.
+
 ## Authorization (the core)
 
 Two layers: **workspace role** (Admin / Editor / Viewer) and **page-level permission** (Full Access / Can Edit / Can Comment / Can View).
@@ -18,6 +25,7 @@ Two layers: **workspace role** (Admin / Editor / Viewer) and **page-level permis
 - **Effective permission is resolved by a single recursive CTE** that walks `parent_id` up to the first explicit `page_permissions` row, then falls back to `workspaces.default_page_access`. One query — never an N+1 walk in application code (Phase-1 decision #3).
 - **Private-page short-circuit.** When `pages.is_private = true`, inheritance and the workspace default are skipped — only the page creator and explicit grants apply, **and workspace Admins are denied too.** Honor this in the resolver, not as a special case sprinkled across callers. The one exception: **Platform Admins** (`is_platform_admin = true`) can see private page **titles only** (never content) via Orbit Admin (`/orbit`) for compliance and moderation — this is enforced by a separate Orbit-specific query that returns only `pages.title` and never exposes `blocks` or `property_values`. This capability is not available to workspace Admins through any in-product path.
 - **Filtering happens in SQL.** Every list/search/tree query joins the permission resolution so restricted rows never leave the database. Fetching broadly and filtering in JS is a **BOLA (Broken Object-Level Authorization)** vulnerability — the restricted rows have already left the trust boundary.
+- **Permission ceiling enforcement.** Before inserting or updating a `page_permissions` row, validate the target user's `workspace_members.role` and cap `access_level` accordingly: Viewer → `can_view` max, Editor → `can_edit` max, Admin → any level. Never persist the client-supplied `access_level` directly; return the (possibly downgraded) value in the response.
 - **Use the shared auth helpers** in the documented order: `requireSession` → `requireWorkspaceMember` → `requirePagePermission`. Never reimplement a permission check inline (Rule 3).
 
 ## Sharing & external access
@@ -35,7 +43,7 @@ Two layers: **workspace role** (Admin / Editor / Viewer) and **page-level permis
 
 ## Notifications & real-time
 
-- **The SSE stream is per-user.** `GET /api/notifications/stream` must authenticate the session and only ever emit the requesting user's own notifications.
+- **The SSE stream is per-user.** `GET /api/notifications/stream` must validate the session on the initial connection using the standard `requireSession` helper and reject unauthenticated or expired sessions before opening the stream. Once open, only the authenticated user's own notifications are emitted — never another user's events. Long-lived SSE connections do not re-authenticate on each event, so session expiry must be caught at connection time.
 - **Notification enqueue is transactional** — only inside the transaction that saved the triggering event, so a rolled-back action never produces a phantom notification.
 
 ## Platform admin (Orbit)
@@ -68,4 +76,4 @@ Every token in Notelian belongs to one of three storage patterns:
 
 ---
 
-*Last updated: 2026-06-09*
+*Last updated: 2026-06-12*
