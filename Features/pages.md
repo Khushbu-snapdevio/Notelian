@@ -116,7 +116,8 @@ Accessible from the page options menu (`···`) or `"Page"` button in the top-r
 **Via options menu:**
 - `···` → `"Move To"` → search for destination (workspace root or another page)
 - Page and all its subpages move together
-- Page retains all content, permissions must be reviewed after move (permissions are inherited from the new parent unless already customized)
+- Page retains all content, permissions must be reviewed after move (permissions are inherited from the new parent unless already customized). If the page uses inherited permissions, it inherits from the new parent immediately. If it has custom permissions set, those persist unchanged.
+- **Technical:** moving a page calls `movePageWithClosure()` in `lib/pages/closure.ts`, which updates `parent_id` and rebuilds all `page_closure` rows in a single transaction — never update `parent_id` directly.
 
 ---
 
@@ -125,17 +126,17 @@ Accessible from the page options menu (`···`) or `"Page"` button in the top-r
 - `···` → `"Duplicate"`
 - Creates an exact copy: all blocks, subpages, icon, and cover
 - Named: `"[Original Title] (copy)"`
-- Placed immediately after the original page in the same parent
+- Placed immediately after the original page in the same parent (`parent_id` set to the original's parent); a fresh closure-table entry is created for the duplicate and all its copied subpages via `insertPageWithClosure()`
 - Does NOT copy page-level permissions or comments — starts fresh
 
 ---
 
 ### 9. Delete & Trash
 
-- `···` → `"Delete"` — moves the page to **Trash** (does not delete immediately)
+- `···` → `"Delete"` — moves the page to **Trash** (does not delete immediately). All subpages are trashed together (cascade). Closure-table entries are preserved so the hierarchy can be restored intact.
 - Deleted pages are visible in the Trash section of the sidebar
 - **Retention:** 30 days. After this period, the page is permanently auto-deleted.
-- **Warning banner:** At 7 days remaining before auto-deletion, the page shows a warning banner when viewed from Trash.
+- **Warning banner:** At 7 days remaining before auto-deletion, the page shows a warning banner when viewed from Trash. This is **stateless UI logic** — the banner is derived at render time from `deleted_at <= NOW() - INTERVAL '23 days'`; no job or flag is required.
 - **Warning notification:** At 3 days remaining, a one-time in-app + email notification is sent to the user who deleted the page and the page creator, so they can restore it before it is pruned.
 - Restore: moves page back to its original parent (or workspace root if parent was also deleted)
 - Permanent Delete: immediately removes the page and all its content
@@ -176,7 +177,7 @@ Available from `···` → `"Export"`
 
 - Subpages are NOT included in a single-page export
 - Databases export as flat CSV (separate option from the database menu)
-- **PDF implementation:** Rendered using **Puppeteer** (headless Chromium) — the page is rendered server-side and printed to PDF via the browser's print pipeline
+- **Export is asynchronous for PDF** — a pg-boss `export-page` job is enqueued and the download link is delivered when ready (per Rule 2: slow IO must not block a Next.js request). Markdown and HTML are rendered synchronously and returned directly. **PDF implementation:** Rendered by the worker using **Puppeteer** (headless Chromium) via the browser's print pipeline.
 
 ---
 
@@ -184,7 +185,8 @@ Available from `···` → `"Export"`
 
 - Access from `···` → `"Version History"`
 - Shows a list of saved snapshots of the page at previous points in time
-- Retention: 7 days
+- Versions are auto-created on save, debounced to **one version per 10-minute window per editor** — not on every keystroke. The version records the `created_by` user who triggered the save.
+- Retention: 7 days (pruned by `auto-delete-expired-versions` job)
 - Click a version to preview it (read-only)
 - `"Restore this version"` button replaces current content with the selected snapshot
 - Restoring creates a new version entry — nothing is permanently lost
@@ -228,7 +230,7 @@ Page
 ├── is_deleted          (boolean, default: false)
 ├── deleted_at          (timestamp, nullable)
 ├── deleted_by          (user_id, foreign key, nullable — ON DELETE SET NULL; who moved the page to Trash)
-├── trash_warning_sent  (boolean, default: false — prevents duplicate 3-day warnings)
+├── trash_warning_sent  (boolean, default: false — set to true by the `warn-expiring-trash` job when the 3-day warning is sent; remains true even if the page is later restored, to prevent duplicate warnings on re-deletion)
 ├── created_by          (user_id, foreign key, nullable — ON DELETE SET NULL; null = "Former Member")
 ├── last_edited_by      (user_id, foreign key, nullable — ON DELETE SET NULL)
 ├── created_at          (timestamp)

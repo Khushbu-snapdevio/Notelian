@@ -242,7 +242,7 @@ DatabaseProperty
 │                        number: { format }
 │                        select/multi_select: { options: [{ id, name, color }] }
 │                        date: { include_time, date_format, time_format }
-│                        relation: { target_database_id, back_relation_id }
+│                        relation: { target_database_id, back_relation_id, back_relation_name }
 │                        person: { allow_multiple })
 ├── default_value       (jsonb, nullable)
 ├── is_hidden           (boolean, default: false — default visibility at property creation;
@@ -291,16 +291,18 @@ PropertyValue
 
 ## Business Rules
 
-1. Every database has a built-in **Title** property that is always visible at column position 1 and cannot be deleted or reordered. **Title is virtual** — it is backed by `pages.title` (each entry is a page), **not** stored as a `database_properties` row or in `property_values`. It does not count toward the 50-property limit, and filters/sorts on Title resolve directly against `pages.title`. Only user-created properties live in `database_properties`.
-2. A database can have a maximum of 50 user-created properties. System properties and back-relation properties do not count toward this limit.
+1. Every database has a built-in **Title** property that is always visible at column position 1 and cannot be deleted or reordered. **Title is virtual** — it is backed by `pages.title` (each entry is a page), **not** stored as a `database_properties` row or in `property_values`. It does not count toward the 50-property limit, and filters/sorts on Title resolve directly against `pages.title`. Only user-created properties live in `database_properties`. **`GET /api/databases/:id/properties` never returns Title** — clients must synthesize it as a read-only column 1 from the page title separately.
+2. A database can have a maximum of 50 user-created properties. System properties and back-relation properties do not count toward this limit. Attempting to create a 51st property returns `400 { error: "property_limit_exceeded", limit: 50 }`. The UI should disable the "Add Property" button and display: *"This database has reached the 50-property limit."*
 3. Deleting a property permanently deletes all values for that property across all entries. This cannot be undone.
 4. Property type changes that cannot convert values (e.g., any type → Relation, any type → Person) clear all existing values, but only after explicit user confirmation. **API + UX flow:** the initial `PATCH /api/databases/:id/properties/:propId` with a destructive new type (where `affectedValueCount > 0`) returns `400 { error: "destructive_conversion", affectedValueCount: N }`. The UI shows a confirmation dialog: *"Changing to [type] will permanently delete N existing values. This cannot be undone."* with a **Delete N values and change type** button. Re-sending the request with `{ confirmDestructive: true }` executes the type change and `DELETE FROM property_values WHERE property_id = :propId` in a **single atomic transaction**. If `affectedValueCount = 0`, the type change proceeds without a confirmation step.
 5. Back-relation properties are auto-created and read-only — they cannot be renamed, reordered, or deleted directly. Deleting the source Relation property removes the back-relation too.
-6. The `@me` default for Person properties resolves at entry creation time — it is stored as the actual user ID, not as a dynamic reference. **Resolution happens exclusively server-side** in the entry creation handler (`POST /api/databases/:id/entries` or the equivalent server action): the handler reads the property's `default_value` config, substitutes `@me` with the authenticated session's `user_id`, and writes the concrete UUID to `property_values`. Client code must never resolve `@me` — only the server resolves it using the verified session identity.
-7. Select option deletion removes that value from all entries holding it. The deleted option cannot be recovered.
-8. System properties (Created Time, Last Edited Time, Created By, Last Edited By) are always present and cannot be modified.
-9. Hidden properties are hidden per-view — they still store and accept values.
-10. Property ordering is shared across all views of the same database (except hidden/visible state, which is per-view).
+6. Deleting a property that is the active `group_by_property_id` on a Board view is rejected with `400 { error: "property_in_use_as_grouping" }` — the user must change or remove the view's grouping first. Deleting a property referenced in active filter or sort rules removes it from those rules atomically in the same transaction.
+7. The `@me` default for Person properties resolves at entry creation time — it is stored as the actual user ID, not as a dynamic reference. **Resolution happens exclusively server-side** in the entry creation handler (`POST /api/databases/:id/entries` or the equivalent server action): the handler reads the property's `default_value` config, substitutes `@me` with the authenticated session's `user_id`, and writes the concrete UUID to `property_values`. Client code must never resolve `@me` — only the server resolves it using the verified session identity.
+8. Select option deletion removes that value from all entries holding it. The deleted option cannot be recovered.
+9. System properties (Created Time, Last Edited Time, Created By, Last Edited By) are always present and cannot be modified.
+10. Hidden properties are hidden per-view — they still store and accept values.
+11. Property ordering is shared across all views of the same database (except hidden/visible state, which is per-view).
+12. The `back_relation_name` is stored in the source Relation property's `config`. When the back-relation property is auto-created, it uses this name as its `name` field. If `back_relation_name` is null, the back-relation is named `"← [source database name]"` by default.
 
 ---
 

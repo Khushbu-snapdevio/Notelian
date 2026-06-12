@@ -164,7 +164,7 @@ WorkspaceMember
 ├── workspace_id          (foreign key → Workspace)
 ├── user_id               (foreign key → User, nullable — null for pending email invites)
 ├── role                  (enum: admin | editor | viewer, default: editor)
-├── status                (enum: active | invited)
+├── status                (enum: active | invited | expired)
 ├── invited_email         (string, nullable — the email address the invite was sent to)
 ├── invite_token          (string, unique, nullable — single-use invite acceptance token)
 ├── invite_expires        (timestamp, nullable — 7 days from invite creation)
@@ -223,7 +223,7 @@ WorkspaceMember
 8. Email invites expire after 7 days if not accepted.
 9. Users sign in via magic link, which verifies their email on first use — so there is no unverified-account state, and invites entered during the onboarding wizard are sent immediately.
 10. Guest users (invited to specific pages) are not full workspace members and are listed separately.
-11. New pages follow the workspace's **Default Page Access** setting, which is `Shared` by default. Changing it applies only to pages created afterward — existing pages are not modified. Any individual page can still be made private regardless of the workspace default. **For subpages:** each subpage evaluates the workspace default independently at creation time (subpages are not exempt). **For duplicated pages:** the duplicate inherits the source page's `is_private` value directly — the workspace default is NOT applied to duplicates, so a private page duplicated remains private regardless of the current default.
+11. New pages follow the workspace's **Default Page Access** setting, which is `Shared` by default. Changing it applies only to pages created afterward — existing pages are not modified. Any individual page can still be made private regardless of the workspace default. **For subpages:** each subpage evaluates the workspace default independently at creation time (subpages are not exempt). **For duplicated pages:** the duplicate inherits the source page's `is_private` value directly — the workspace default is NOT applied to duplicates, so a private page duplicated remains private regardless of the current default. **Subpages of a duplicated page** also inherit their respective source subpage's `is_private` value — the workspace default is not re-evaluated for any page in a duplicate subtree.
 
 ---
 

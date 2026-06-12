@@ -33,4 +33,4 @@ the architecture reference never drifts from the code.
 
 ---
 
-*Last updated: 2026-06-09*
+*Last updated: 2026-06-12*

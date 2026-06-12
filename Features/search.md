@@ -168,7 +168,7 @@ Toggle: `"Title only"` button next to the filter row.
 
 **PostgreSQL Full-Text Search:**
 - Each indexed content item has a `search_vector` column of type `tsvector`
-- Vectors are updated by database triggers on insert/update of page blocks, entry properties, and comments
+- Vectors are updated by PostgreSQL triggers on INSERT/UPDATE of `blocks` (page block content), `property_values` (database entry text fields), and `comments` (comment and reply text) — each trigger updates the corresponding `search_index` row's `search_vector` column synchronously
 - Query uses `@@` operator with `to_tsquery()` for matching
 - Ranking uses `ts_rank()` with custom weights:
   - Title: weight A (highest)

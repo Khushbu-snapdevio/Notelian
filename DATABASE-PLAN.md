@@ -395,6 +395,7 @@ export const propertyValues = pgTable("property_values", {
   entryId:    uuid("entry_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
   propertyId: uuid("property_id").notNull().references(() => databaseProperties.id, { onDelete: "cascade" }),
   value:      jsonb("value"),
+  createdAt:  timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt:  updatedAt(),
 }, (t) => ({
   uniqEntryProp: uniqueIndex("property_values_entry_prop_idx").on(t.entryId, t.propertyId),
@@ -496,6 +497,7 @@ export const notifications = pgTable("notifications", {
   readAt:         timestamp("read_at", { withTimezone: true }),
   createdAt:      timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
+  recipientIdx:       index("notifications_recipient_idx").on(t.recipientId),
   recipientUnreadIdx: index("notifications_recipient_unread_idx").on(t.recipientId, t.isRead),
   createdIdx:         index("notifications_created_idx").on(t.createdAt),
 }));
@@ -505,6 +507,7 @@ export const notificationPreferences = pgTable("notification_preferences", {
   userId:          uuid("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
   emailFrequency:  emailFrequency("email_frequency").notNull().default("daily"),
   weeklyDigestDay: integer("weekly_digest_day").notNull().default(1),  // 0=Sun … 6=Sat
+  createdAt:       timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt:       updatedAt(),
 });
 
@@ -605,6 +608,7 @@ export const workspaceStorageUsage = pgTable("workspace_storage_usage", {
   workspaceId:           uuid("workspace_id").primaryKey().references(() => workspaces.id, { onDelete: "cascade" }),
   bytesUsed:             bigint("bytes_used", { mode: "number" }).notNull().default(0),
   thresholdNotifiedAt:   timestamp("threshold_notified_at", { withTimezone: true }),  // null = not yet notified; set when 90% email is sent; clear when usage drops below 90%
+  createdAt:             timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt:             updatedAt(),
 });
 
@@ -615,6 +619,7 @@ export const userPreferences = pgTable("user_preferences", {
   lastWorkspaceId:  uuid("last_workspace_id").references(() => workspaces.id, { onDelete: "set null" }),
   sidebarWidth:     integer("sidebar_width").notNull().default(240),  // 200–480
   sidebarCollapsed: boolean("sidebar_collapsed").notNull().default(false),
+  createdAt:        timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt:        updatedAt(),
 });
 
@@ -625,6 +630,7 @@ export const userHintStates = pgTable("user_hint_states", {
   dismissedAt: timestamp("dismissed_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
   uniqUserHint: uniqueIndex("user_hint_states_user_hint_idx").on(t.userId, t.hintKey),
+  userIdx:      index("user_hint_states_user_idx").on(t.userId),
 }));
 
 export const userFavorites = pgTable("user_favorites", {
@@ -987,6 +993,10 @@ BEGIN
     JOIN database_properties dp ON dp.id = pv.property_id
    WHERE pv.entry_id = NEW.entry_id
      AND dp.type IN ('text', 'select', 'multi_select', 'url', 'email', 'phone');
+  -- number, date, checkbox, person, and relation are intentionally excluded from
+  -- full-text search: they carry no meaningful natural-language content to index.
+  -- If a use-case for searching these arises post-MVP, add an expression index
+  -- on the specific property type rather than widening this trigger.
 
   INSERT INTO search_index (id, workspace_id, source_type, source_id, title, search_vector, page_id, updated_at)
   SELECT

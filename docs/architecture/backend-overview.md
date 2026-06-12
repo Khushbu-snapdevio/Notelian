@@ -62,7 +62,7 @@ exactly one place.
 | --- | --- | --- |
 | **Auth config** | `lib/auth/` | Better Auth setup — magic-link plugin, admin plugin, DB-backed sessions |
 | **Auth guards** | `lib/auth/guards.ts` | `requireSession()`, `requireWorkspaceMember()`, `requirePagePermission()`, `requireAdmin()` — used by every protected route & action |
-| **Permission resolver** | `lib/permissions/` | The single recursive CTE that walks a page's ancestors to the first explicit grant or workspace root (Phase-1 decision #3). Enforced at the SQL level, never after fetch |
+| **Permission resolver** | `lib/permissions/` | The single recursive CTE that walks a page's ancestors to the first explicit grant or workspace root (Phase-1 decision #3). Enforced at the SQL level, never after fetch. **Exception:** `is_private = true` short-circuits inheritance — only the creator and explicit grants apply; see [security.md](../security.md#authorization-the-core) |
 | **Page tree** | `lib/pages/tree.ts` | Closure-table operations — descendants, move, duplicate-subtree, breadcrumb (Phase-1 decision #1) |
 | **Blocks** | `lib/blocks/` | JSONB block read/write with `schema_version` (Phase-1 decision #2); serialize/deserialize per block type |
 | **Search** | `lib/search/` | `tsvector` / `tsquery` helpers, permission-filtered result scoping |
@@ -146,6 +146,16 @@ and which job fires. (See [notifications.md](../../Features/notifications.md).)
 handler, schedule, retry/expiry budget, policy). It is the source the
 [background-jobs.md](background-jobs.md) catalog reflects.
 
+**Implementation:** `job-names.ts` exports a `const` object as the single source of truth for queue name strings:
+```ts
+export const JOB = {
+  SEND_NOTIFICATION_EMAIL: 'send-notification-email',
+  AUTO_DELETE_EXPIRED_TRASH: 'auto-delete-expired-trash',
+  // … one key per job
+} as const
+```
+`register.ts` imports `JOB` and calls `boss.work(JOB.QUEUE_NAME, handler, opts)` and `boss.schedule(JOB.QUEUE_NAME, cronExpr, {}, { policy: 'exclusive' })` for each queue. **Never call `boss.work()` or `boss.schedule()` outside `register.ts`.** Individual handlers live in `lib/jobs/handlers/{job-name}.ts`, one file per handler.
+
 ---
 
 ## How a request flows (example: posting a comment with an @mention)
@@ -165,4 +175,4 @@ structure.
 
 ---
 
-*Last updated: 2026-06-09*
+*Last updated: 2026-06-12*

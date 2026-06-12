@@ -273,7 +273,7 @@ GuestInvitation
 
 ## Business Rules
 
-1. Workspace roles are the **ceiling** of permissions — page-level permissions can restrict but never expand a member's workspace role. (A Viewer is read-only on every page; an Editor can be granted up to Full Access.) **Enforcement point:** the `POST /api/pages/:id/permissions` handler and its equivalent server action must look up the target user's `workspace_members.role` before writing the `page_permissions` row, and cap `access_level` to: `can_view` if Viewer, `can_edit` if Editor, any level if Admin. If the submitted `access_level` exceeds the ceiling, silently downgrade it to the ceiling value rather than returning an error.
+1. Workspace roles are the **ceiling** of permissions — page-level permissions can restrict but never expand a member's workspace role. (A Viewer is read-only on every page; an Editor can be granted up to Full Access.) **Enforcement point:** the `POST /api/pages/:id/permissions` handler and its equivalent server action must look up the target user's `workspace_members.role` before writing the `page_permissions` row, and cap `access_level` to: `can_view` if Viewer, `can_edit` if Editor, any level if Admin. If the submitted `access_level` exceeds the ceiling, silently downgrade it to the ceiling value and return the downgraded `access_level` in the response so the UI can reflect the actual grant.
 2. A workspace Admin has implicit access to all non-private pages, regardless of page-level settings.
 3. Private pages are completely hidden from all other users — Admins cannot discover private page content through any in-product UI.
 4. Subpages inherit the parent's permissions by default unless the subpage has custom permissions explicitly set.

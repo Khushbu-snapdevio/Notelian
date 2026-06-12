@@ -59,7 +59,7 @@ the feature spec that owns the job's behavior.
 | --- | --- | --- |
 | `cleanup-stale-uploads` | Every 30 min | Delete storage objects for uploads that were signed but never confirmed |
 | `cleanup-orphaned-media` | Daily | Delete stored files no longer referenced by any active block — or by a page version within the 7-day window (preserves undo / Version History) |
-| `sync-storage-usage` | Daily | Reconcile each workspace's `bytes_used` against the actual storage objects |
+| `sync-storage-usage` | Daily | Sum all `file_uploads.size` values per workspace and atomically update `workspace_storage_usage.bytes_used`. A no-op if the value has not drifted. Handles objects not yet cleaned by `cleanup-orphaned-media` by re-deriving usage from the DB, not from S3 directly |
 
 ### Auth — [authentication.md](../../Features/authentication.md)
 
@@ -92,8 +92,8 @@ the feature spec that owns the job's behavior.
 
 | Job | Trigger | Purpose |
 | --- | --- | --- |
-| `send-notification-email` | On event (realtime frequency) | Deliver a per-event notification email (mention, comment reply, access granted) via Nodemailer/SMTP; retries up to 3× with exponential backoff (1 min → 5 min → 25 min) |
-| `send-email-digest` | Hourly (see TZ note below) | Send the daily or weekly digest of unread notifications; skips users with nothing unread |
+| `send-notification-email` | On event (realtime frequency) | Deliver a per-event notification email (mention, comment reply, access granted) via Nodemailer/SMTP; retries up to 3× with exponential backoff (60s → 300s → 1500s) |
+| `send-email-digest` | Hourly (see TZ note below) | Send the daily or weekly digest of unread notifications; skips users with nothing unread; retries up to 2× with exponential backoff; idempotency key is `(recipient_email, digest_date)` |
 | `cleanup-old-notifications` | Nightly | Permanently delete notification rows older than 90 days |
 | `cleanup-email-outbox` | Nightly | Sweep `email_outbox` rows stuck in `sending` > 10 min → `failed`; purge `sent` rows older than 30 days |
 

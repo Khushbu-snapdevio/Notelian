@@ -38,7 +38,7 @@ Client                     API Server              S3-compatible storage
 
 | Method | Endpoint | Description | Access |
 |--------|----------|-------------|--------|
-| POST | `/api/uploads/sign` | Request a pre-signed PUT URL; enforces per-type size limits and workspace quota before issuing | Authenticated member |
+| POST | `/api/uploads/sign` | Request a pre-signed PUT URL. Request body: `{ kind: "page_cover" \| "page_icon" \| "block_media" \| "user_avatar" \| "workspace_icon", size: number, mimeType: string, pageId?: uuid, blockId?: uuid }`. For `user_avatar`, `pageId` and `blockId` are omitted. Validates declared `mimeType` against the Allowed MIME Types list and `size` against per-type limits **before** issuing the URL — returns `400` if either check fails. If the signed URL expires before the upload completes (15-min TTL), the S3 PUT will be rejected; the client must call this endpoint again to get a fresh URL and retry. | Authenticated member |
 | POST | `/api/uploads/confirm` | Confirm upload complete, verify object exists, record usage | Authenticated member |
 | DELETE | `/api/uploads/:objectKey` | Delete a stored file — **called only by pg-boss cleanup jobs, never by end-user actions**; a block delete does not trigger this endpoint (files are preserved for undo + Version History) | System (cleanup jobs only) |
 
